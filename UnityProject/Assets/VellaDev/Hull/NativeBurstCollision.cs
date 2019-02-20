@@ -52,6 +52,7 @@ namespace VellaDev.Hull
 
                         if (NativeCollision.IsCollision(a.Transform, a.Hull, b.Transform, b.Hull))
                         {
+                            isCollision = true;
                             results.Add(new BatchCollisionResult
                             {
                                 A = a,
