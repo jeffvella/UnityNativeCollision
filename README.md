@@ -9,7 +9,7 @@ This project is an experimental C# implementation of the SAT collision and polyg
 * Polygon/Polygon intersection manifold generation (via Sutherland-Hodgman clipping)
 * Burst compiled jobs for single and batch collision operations.
 
-<img src="https://imgur.com/2r6IAtB" />
+<img src="https://imgur.com/2r6IAtB" target="_blank" />
 
 ##### Acknowledgments:
 This work is largely derived from BounceLite by Irlan Robson (zLib License): 
