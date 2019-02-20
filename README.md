@@ -11,6 +11,9 @@ This project is an experimental C# implementation of SAT collision and polygon i
 
 <img src="https://i.imgur.com/2r6IAtB.gif" target="_blank" />
 
+Note: Project was creaated with Unity 2019.2 
+
+
 ##### Acknowledgments:
 This work is largely derived from BounceLite by Irlan Robson (zLib License): 
 https://github.com/irlanrobson/bounce_lite 
