@@ -4,7 +4,7 @@ This project is an experimental C# implementation of the SAT collision and polyg
 
 ##### Features:
 
-* Generation of native half-edge mesh struct from Unity Meshes.
+* Generation of native half-edge mesh from Unity Meshes.
 * Fast Boolean convex polygon face/edge collision detection.
 * Polygon/Polygon intersection manifold generation (via Sutherland-Hodgman clipping)
 * Burst compiled jobs for single and batch collision operations.
