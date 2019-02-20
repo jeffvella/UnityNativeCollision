@@ -11,7 +11,7 @@ This project is an experimental C# implementation of SAT collision and polygon i
 
 <img src="https://i.imgur.com/2r6IAtB.gif" target="_blank" />
 
-Note: Project was creaated with Unity 2019.2 
+Note: Project was created with Unity 2019.2, older versions may not work.
 
 
 ##### Acknowledgments:
