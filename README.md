@@ -15,7 +15,7 @@ Note: Project was created with Unity 2019.2, older versions may not work.
 
 
 ##### Acknowledgments:
-This work is largely derived from BounceLite by Irlan Robson (zLib License): 
+This work is in part derived from BounceLite by Irlan Robson (zLib License): 
 https://github.com/irlanrobson/bounce_lite 
 
 The SAT implementation is based on the 2013 GDC presentation by Dirk Gregorius and his forum posts about Valve's Rubikon physics engine:
