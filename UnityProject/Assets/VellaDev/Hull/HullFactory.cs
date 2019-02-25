@@ -10,6 +10,29 @@ namespace VellaDev.Hull
 {
     public class HullFactory
     {
+        public struct DetailedFaceDef
+        {
+            public Vector3 Center;
+            public Vector3 Normal;
+            public List<float3> Verts;
+            public List<int> Indices;
+        }
+
+        public unsafe struct NativeFaceDef
+        {
+            public int VertexCount;
+            public int* Vertices;
+            public int HighestIndex;
+        };
+
+        public unsafe struct NativeHullDef
+        {
+            public int FaceCount;
+            public int VertexCount;
+            public NativeArray<float3> VerticesNative;
+            public NativeArray<NativeFaceDef> FacesNative;
+        };
+
         public static unsafe NativeHull CreateBox(float3 scale)
         {
             float3[] cubeVertices =
@@ -40,12 +63,12 @@ namespace VellaDev.Hull
 
             NativeFaceDef[] boxFaces =
             {
-                new NativeFaceDef {vertexCount = 4, vertices = left},
-                new NativeFaceDef {vertexCount = 4, vertices = right},
-                new NativeFaceDef {vertexCount = 4, vertices = down},
-                new NativeFaceDef {vertexCount = 4, vertices = up},
-                new NativeFaceDef {vertexCount = 4, vertices = back},
-                new NativeFaceDef {vertexCount = 4, vertices = front},
+                new NativeFaceDef {VertexCount = 4, Vertices = left},
+                new NativeFaceDef {VertexCount = 4, Vertices = right},
+                new NativeFaceDef {VertexCount = 4, Vertices = down},
+                new NativeFaceDef {VertexCount = 4, Vertices = up},
+                new NativeFaceDef {VertexCount = 4, Vertices = back},
+                new NativeFaceDef {VertexCount = 4, Vertices = front},
             };
 
             var result = new NativeHull();
@@ -54,14 +77,14 @@ namespace VellaDev.Hull
             using (var cubeVertsNative = new NativeArray<float3>(cubeVertices, Allocator.Temp))
             {
                 NativeHullDef hullDef;
-                hullDef.vertexCount = 8;
-                hullDef.verticesNative = cubeVertsNative;
-                hullDef.faceCount = 6;
-                hullDef.facesNative = boxFacesNative;
+                hullDef.VertexCount = 8;
+                hullDef.VerticesNative = cubeVertsNative;
+                hullDef.FaceCount = 6;
+                hullDef.FacesNative = boxFacesNative;
                 SetFromFaces(ref result, hullDef);
             }
 
-            result._isCreated = 1;
+            result.IsCreated = true;
             return result;
         }
 
@@ -133,9 +156,9 @@ namespace VellaDev.Hull
 
                 faceDefs.Add(new NativeFaceDef
                 {
-                    highestIndex = max,
-                    vertexCount = borderIndices.Length,
-                    vertices = v,
+                    HighestIndex = max,
+                    VertexCount = borderIndices.Length,
+                    Vertices = v,
                 });
             }
 
@@ -144,14 +167,14 @@ namespace VellaDev.Hull
             {
                 uniqueVerts.RemoveAt(orphanIdx);
 
-                foreach(var face in faceDefs.Where(f => f.highestIndex >= orphanIdx))
+                foreach(var face in faceDefs.Where(f => f.HighestIndex >= orphanIdx))
                 {
-                    for (int i = 0; i < face.vertexCount; i++)
+                    for (int i = 0; i < face.VertexCount; i++)
                     {
-                        var faceVertIdx = face.vertices[i];
+                        var faceVertIdx = face.Vertices[i];
                         if (faceVertIdx >= orphanIdx)
                         {
-                            face.vertices[i] = --faceVertIdx;
+                            face.Vertices[i] = --faceVertIdx;
                         }
                     }
                 }
@@ -164,37 +187,37 @@ namespace VellaDev.Hull
             {
 
                 NativeHullDef hullDef;
-                hullDef.vertexCount = vertsNative.Length;
-                hullDef.verticesNative = vertsNative;
-                hullDef.faceCount = faceNative.Length;
-                hullDef.facesNative = faceNative;
+                hullDef.VertexCount = vertsNative.Length;
+                hullDef.VerticesNative = vertsNative;
+                hullDef.FaceCount = faceNative.Length;
+                hullDef.FacesNative = faceNative;
                 SetFromFaces(ref result, hullDef);
             }
 
-            result._isCreated = 1;
+            result.IsCreated = true;
             return result;
         }
 
 
         public unsafe static void SetFromFaces(ref NativeHull hull, NativeHullDef def)
         {
-            Debug.Assert(def.faceCount > 0);
-            Debug.Assert(def.vertexCount > 0);
+            Debug.Assert(def.FaceCount > 0);
+            Debug.Assert(def.VertexCount > 0);
 
-            hull.vertexCount = def.vertexCount;
-            var arr = def.verticesNative.ToArray();
+            hull.VertexCount = def.VertexCount;
+            var arr = def.VerticesNative.ToArray();
 
-            hull.verticesNative = new NativeArrayNoLeakDetection<float3>(arr, Allocator.Persistent);
-            hull.vertices = (float3*)hull.verticesNative.GetUnsafePtr();
-            hull.faceCount = def.faceCount;
-            hull.facesNative = new NativeArrayNoLeakDetection<NativeFace>(hull.faceCount, Allocator.Persistent);
-            hull.faces = (NativeFace*)hull.facesNative.GetUnsafePtr();
+            hull.VerticesNative = new NativeArrayNoLeakDetection<float3>(arr, Allocator.Persistent);
+            hull.Vertices = (float3*)hull.VerticesNative.GetUnsafePtr();
+            hull.FaceCount = def.FaceCount;
+            hull.FacesNative = new NativeArrayNoLeakDetection<NativeFace>(hull.FaceCount, Allocator.Persistent);
+            hull.Faces = (NativeFace*)hull.FacesNative.GetUnsafePtr();
 
             // Initialize all faces by assigning -1 to each edge reference.
-            for (int k = 0; k < def.faceCount; ++k)
+            for (int k = 0; k < def.FaceCount; ++k)
             {               
-                NativeFace* f = hull.faces + k;                
-                f->edge = -1;
+                NativeFace* f = hull.Faces + k;                
+                f->Edge = -1;
             }
 
             CreateFacesPlanes(ref hull, ref def);
@@ -203,14 +226,14 @@ namespace VellaDev.Hull
             var edgesList = new NativeHalfEdge[10000]; // todo lol
 
             // Loop through all faces.
-            for (int i = 0; i < def.faceCount; ++i)
+            for (int i = 0; i < def.FaceCount; ++i)
             {
-                NativeFaceDef face = def.facesNative[i];
-                int vertCount = face.vertexCount;
+                NativeFaceDef face = def.FacesNative[i];
+                int vertCount = face.VertexCount;
 
                 Debug.Assert(vertCount >= 3);
 
-                int* vertices = face.vertices;
+                int* vertices = face.Vertices;
 
                 var faceHalfEdges = new List<int>();
 
@@ -231,18 +254,18 @@ namespace VellaDev.Hull
                         int e12 = iter12;
 
                         // Link adjacent face to edge.
-                        if (edgesList[e12].face == -1)
+                        if (edgesList[e12].Face == -1)
                         {
-                            edgesList[e12].face = i;
+                            edgesList[e12].Face = i;
                         }
                         else
                         {
                             throw new Exception("Two shared edges can't have the same vertices in the same order");        
                         }
 
-                        if (hull.faces[i].edge == -1)
+                        if (hull.Faces[i].Edge == -1)
                         {
-                            hull.faces[i].edge = e12;
+                            hull.Faces[i].Edge = e12;
                         }
 
                         faceHalfEdges.Add(e12);
@@ -250,27 +273,27 @@ namespace VellaDev.Hull
                     else
                     {
                         // The next edge of the current half edge in the array is the twin edge.
-                        int e12 = hull.edgeCount++;
-                        int e21 = hull.edgeCount++;
+                        int e12 = hull.EdgeCount++;
+                        int e21 = hull.EdgeCount++;
 
-                        if (hull.faces[i].edge == -1)
+                        if (hull.Faces[i].Edge == -1)
                         {
-                            hull.faces[i].edge = e12;
+                            hull.Faces[i].Edge = e12;
                         }
 
                         faceHalfEdges.Add(e12);
 
-                        edgesList[e12].prev = -1;
-                        edgesList[e12].next = -1;
-                        edgesList[e12].twin = e21;
-                        edgesList[e12].face = i;
-                        edgesList[e12].origin = v1;
+                        edgesList[e12].Prev = -1;
+                        edgesList[e12].Next = -1;
+                        edgesList[e12].Twin = e21;
+                        edgesList[e12].Face = i;
+                        edgesList[e12].Origin = v1;
 
-                        edgesList[e21].prev = -1;
-                        edgesList[e21].next = -1;
-                        edgesList[e21].twin = e12;
-                        edgesList[e21].face = -1;
-                        edgesList[e21].origin = v2;
+                        edgesList[e21].Prev = -1;
+                        edgesList[e21].Next = -1;
+                        edgesList[e21].Twin = e12;
+                        edgesList[e21].Face = -1;
+                        edgesList[e21].Origin = v2;
 
                         // Add edges to map.
                         edgeMap[(v1, v2)] = e12;
@@ -284,20 +307,20 @@ namespace VellaDev.Hull
                     int e1 = faceHalfEdges[j];
                     int e2 = j + 1 < faceHalfEdges.Count ? faceHalfEdges[j + 1] : faceHalfEdges[0];
 
-                    edgesList[e1].next = e2;
-                    edgesList[e2].prev = e1;
+                    edgesList[e1].Next = e2;
+                    edgesList[e2].Prev = e1;
                 }
 
 
             }
 
-            hull.edgesNative = new NativeArrayNoLeakDetection<NativeHalfEdge>(hull.edgeCount, Allocator.Persistent);
-            for (int j = 0; j < hull.edgeCount; j++)
+            hull.EdgesNative = new NativeArrayNoLeakDetection<NativeHalfEdge>(hull.EdgeCount, Allocator.Persistent);
+            for (int j = 0; j < hull.EdgeCount; j++)
             {
-                hull.edgesNative[j] = edgesList[j];
+                hull.EdgesNative[j] = edgesList[j];
             }
 
-            hull.edges = (NativeHalfEdge*)hull.edgesNative.GetUnsafePtr();
+            hull.edges = (NativeHalfEdge*)hull.EdgesNative.GetUnsafePtr();
 
             hull.Validate();
         }
@@ -307,17 +330,17 @@ namespace VellaDev.Hull
             //Debug.Assert((IntPtr)hull.facesPlanes != IntPtr.Zero);
             //Debug.Assert(hull.faceCount > 0);
 
-            hull.facesPlanesNative = new NativeArrayNoLeakDetection<NativePlane>(def.faceCount, Allocator.Persistent);
-            hull.facesPlanes = (NativePlane*)hull.facesPlanesNative.GetUnsafePtr();
+            hull.FacesPlanesNative = new NativeArrayNoLeakDetection<NativePlane>(def.FaceCount, Allocator.Persistent);
+            hull.FacesPlanes = (NativePlane*)hull.FacesPlanesNative.GetUnsafePtr();
 
-            for (int i = 0; i < def.faceCount; ++i)
+            for (int i = 0; i < def.FaceCount; ++i)
             {
-                NativeFaceDef face = def.facesNative[i];
-                int vertCount = face.vertexCount;
+                NativeFaceDef face = def.FacesNative[i];
+                int vertCount = face.VertexCount;
 
                 Debug.Assert(vertCount >= 3, "Input mesh must have at least 3 vertices");
 
-                int* indices = face.vertices;
+                int* indices = face.Vertices;
 
                 float3 normal = default;
                 float3 centroid = default;
@@ -331,8 +354,8 @@ namespace VellaDev.Hull
                     float3 v2;
                     try
                     {
-                        v1 = def.verticesNative[i1];
-                        v2 = def.verticesNative[i2];
+                        v1 = def.VerticesNative[i1];
+                        v2 = def.VerticesNative[i2];
                     }
                     catch (Exception e)
                     {
@@ -343,8 +366,8 @@ namespace VellaDev.Hull
                     centroid += v1;
                 }
 
-                hull.facesPlanes[i].Normal = normalize(normal);
-                hull.facesPlanes[i].Offset = dot(normalize(normal), centroid) / vertCount;
+                hull.FacesPlanes[i].Normal = normalize(normal);
+                hull.FacesPlanes[i].Offset = dot(normalize(normal), centroid) / vertCount;
             }
 
             float3 Newell(float3 a, float3 b)

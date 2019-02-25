@@ -10,12 +10,12 @@ namespace VellaDev.Hull
         public NativeManifold(Allocator allocator)
         {
             Points = new NativeList<ContactPoint>(MaxPoints, Allocator.Persistent);
-            normal = 0;
+            Normal = 0;
         }
 
         public const int MaxPoints = 24;
 
-        public float3 normal; //A -> B.
+        public float3 Normal; //A -> B.
 
         public NativeList<ContactPoint> Points;
         public bool IsCreated => Points.IsCreated;
@@ -25,13 +25,13 @@ namespace VellaDev.Hull
             Points.Add(cp);
         }
 
-        public void Add(float3 position, float distance, b3ContactID id)
+        public void Add(float3 position, float distance, ContactID id)
         {
             Points.Add(new ContactPoint
             {
-                id = id,
-                position = position,
-                distance = distance,           
+                Id = id,
+                Position = position,
+                Distance = distance,           
             });
         }
 
@@ -47,50 +47,50 @@ namespace VellaDev.Hull
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
     public struct ContactPoint
     {        
-        public b3ContactID id;
+        public ContactID Id;
 
         /// <summary>
         /// The contact point, at the point in time when the shapes first collide.
         /// (center of the line between points on each shape).
         /// </summary>
-        public float3 position;
+        public float3 Position;
 
-        public float normalImpulse;
-        public float3 tangent1;
-        public float3 tangent2;
-        public float tangentImpulse1;
-        public float tangentImpulse2;
-        public float distance;
+        public float NormalImpulse;
+        public float3 Tangent1;
+        public float3 Tangent2;
+        public float TangentImpulse1;
+        public float TangentImpulse2;
+        public float Distance;
 
-        public float3 penetration;
-
-        /// <summary>
-        /// Closest position clamped to the edge
-        /// </summary>
-        public float3 positionOnTarget;
+        public float3 Penetration;
 
         /// <summary>
         /// Closest position clamped to the edge
         /// </summary>
-        public float3 positionOnSource;
+        public float3 PositionOnTarget;
+
+        /// <summary>
+        /// Closest position clamped to the edge
+        /// </summary>
+        public float3 PositionOnSource;
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 4)]
-    public struct b3ContactID
+    public struct ContactID
     {
         [FieldOffset(0)]
-        public b3FeaturePair featurePair;
+        public FeaturePair FeaturePair;
         [FieldOffset(0)]
-        public int key;
+        public int Key;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct b3FeaturePair
+    public struct FeaturePair
     {
-        public sbyte inEdge1;
-        public sbyte outEdge1;
-        public sbyte inEdge2;
-        public sbyte outEdge2;
+        public sbyte InEdge1;
+        public sbyte OutEdge1;
+        public sbyte InEdge2;
+        public sbyte OutEdge2;
     }
 
 }

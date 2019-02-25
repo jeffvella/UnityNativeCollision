@@ -35,7 +35,7 @@ namespace VellaDev.Hull
     public struct ClipVertex
     {
         public float3 position;
-        public b3FeaturePair featurePair;
+        public FeaturePair featurePair;
         public NativePlane plane;
         public float3 hull2local;
     };
@@ -55,18 +55,18 @@ namespace VellaDev.Hull
 
             // todo: collect faces and put them in combined manifold
 
-            for (int i = 0; i < hull2.faceCount; i++)
+            for (int i = 0; i < hull2.FaceCount; i++)
             {
                 var tmp = new NativeManifold(Allocator.Temp);
-                b3CreateFaceContact2(ref tmp, i, transform2, hull2, transform1, hull1);
+                CreateFaceContact2(ref tmp, i, transform2, hull2, transform1, hull1);
                 HullDrawingUtility.DebugDrawManifold(tmp);
                 tmp.Dispose();
             }
 
-            for (int i = 0; i < hull1.faceCount; i++)
+            for (int i = 0; i < hull1.FaceCount; i++)
             {
                 var tmp = new NativeManifold(Allocator.Temp);
-                b3CreateFaceContact2(ref tmp, i, transform1, hull1, transform2, hull2);
+                CreateFaceContact2(ref tmp, i, transform1, hull1, transform2, hull2);
                 HullDrawingUtility.DebugDrawManifold(tmp);
                 tmp.Dispose();
             }
@@ -74,7 +74,7 @@ namespace VellaDev.Hull
             return true;
         }
 
-        public static int b3CreateFaceContact2(ref NativeManifold output, int referenceFaceIndex, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
+        public static int CreateFaceContact2(ref NativeManifold output, int referenceFaceIndex, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
         {
             // todo, clean this up, i'm reversing the args here so that closest face is the one clipped instead of incident.
 
@@ -92,17 +92,17 @@ namespace VellaDev.Hull
             var refPlane = hull1.GetPlane(referenceFaceIndex);
             NativePlane referencePlane = transform1 * refPlane;
 
-            NativeList<ClipPlane> clippingPlanes = new NativeList<ClipPlane>((int)hull1.faceCount, Allocator.Temp);
+            NativeList<ClipPlane> clippingPlanes = new NativeList<ClipPlane>((int)hull1.FaceCount, Allocator.Temp);
             GetClippingPlanes(ref clippingPlanes, referencePlane, referenceFaceIndex, transform1, hull1);
 
             // Create face polygon.
-            NativeList<ClipVertex> incidentPolygon = new NativeList<ClipVertex>((int)hull1.vertexCount, Allocator.Temp);
+            NativeList<ClipVertex> incidentPolygon = new NativeList<ClipVertex>((int)hull1.VertexCount, Allocator.Temp);
             ComputeFaceClippingPolygon(ref incidentPolygon, incidentFaceIndex, transform2, hull2);
 
             // Clip face polygon against the clipping planes.
             for (int i = 0; i < clippingPlanes.Length; ++i)
             {    
-                NativeList<ClipVertex> outputPolygon = new NativeList<ClipVertex>((int)hull1.vertexCount, Allocator.Temp);
+                NativeList<ClipVertex> outputPolygon = new NativeList<ClipVertex>((int)hull1.VertexCount, Allocator.Temp);
                 Clip(clippingPlanes[i], ref incidentPolygon, ref outputPolygon);
 
                 if (outputPolygon.Length == 0)
@@ -118,7 +118,7 @@ namespace VellaDev.Hull
             {
                 ClipVertex vertex = incidentPolygon[i];
                 float distance = referencePlane.Distance(vertex.position);
-                output.Add(vertex.position, distance, new b3ContactID { featurePair = vertex.featurePair });
+                output.Add(vertex.position, distance, new ContactID { FeaturePair = vertex.featurePair });
             }
 
             clippingPlanes.Dispose();
@@ -157,10 +157,10 @@ namespace VellaDev.Hull
                     // Keep intersection point 
                     ClipVertex vertex;
                     vertex.position = position;
-                    vertex.featurePair.inEdge1 = -1;
-                    vertex.featurePair.inEdge2 = vertex1.featurePair.outEdge2;
-                    vertex.featurePair.outEdge1 = (sbyte)clipPlane.edgeId;
-                    vertex.featurePair.outEdge2 = -1;
+                    vertex.featurePair.InEdge1 = -1;
+                    vertex.featurePair.InEdge2 = vertex1.featurePair.OutEdge2;
+                    vertex.featurePair.OutEdge1 = (sbyte)clipPlane.edgeId;
+                    vertex.featurePair.OutEdge2 = -1;
                     vertex.plane = clipPlane.plane;
                     vertex.hull2local = position;
                     output.Add(vertex);
@@ -174,10 +174,10 @@ namespace VellaDev.Hull
                     // Keep intersection point 
                     ClipVertex vertex;
                     vertex.position = position;
-                    vertex.featurePair.inEdge1 = (sbyte)clipPlane.edgeId;
-                    vertex.featurePair.outEdge1 = -1;
-                    vertex.featurePair.inEdge2 = -1;
-                    vertex.featurePair.outEdge2 = vertex1.featurePair.outEdge2;
+                    vertex.featurePair.InEdge1 = (sbyte)clipPlane.edgeId;
+                    vertex.featurePair.OutEdge1 = -1;
+                    vertex.featurePair.InEdge2 = -1;
+                    vertex.featurePair.OutEdge2 = vertex1.featurePair.OutEdge2;
                     vertex.plane = clipPlane.plane;
                     vertex.hull2local = position;
                     output.Add(vertex);
@@ -205,7 +205,7 @@ namespace VellaDev.Hull
         {
             int faceIndex = 0;
             float min = math.dot(facePlane.Normal, (transform * hull.GetPlane(faceIndex)).Normal);
-            for (int i = 1; i < hull.faceCount; ++i)
+            for (int i = 1; i < hull.FaceCount; ++i)
             {
                 float dot = math.dot(facePlane.Normal, (transform * hull.GetPlane(i)).Normal);
                 if (dot < min)
@@ -223,7 +223,7 @@ namespace VellaDev.Hull
         public static unsafe void GetClippingPlanes(ref NativeList<ClipPlane> output, NativePlane facePlane, int faceIndex, RigidTransform transform, NativeHull hull)
         {
             Debug.Assert(output.IsCreated);
-            for (int i = 0; i < hull.faceCount; i++)
+            for (int i = 0; i < hull.FaceCount; i++)
             {
                 var p = hull.GetPlane(i);
                 output.Add(new ClipPlane
@@ -242,27 +242,27 @@ namespace VellaDev.Hull
 
             NativeFace* face = hull.GetFacePtr(faceIndex);
             NativePlane plane = hull.GetPlane(faceIndex);
-            NativeHalfEdge* start = hull.GetEdgePtr(face->edge);
+            NativeHalfEdge* start = hull.GetEdgePtr(face->Edge);
             NativeHalfEdge* current = start;
 
             do
             {
-                NativeHalfEdge* twin = hull.GetEdgePtr(current->twin);
-                float3 vertex = hull.GetVertex(current->origin);
+                NativeHalfEdge* twin = hull.GetEdgePtr(current->Twin);
+                float3 vertex = hull.GetVertex(current->Origin);
                 float3 P = math.transform(t, vertex);
 
                 ClipVertex clipVertex;
-                clipVertex.featurePair.inEdge1 = -1;
-                clipVertex.featurePair.outEdge1 = -1;
-                clipVertex.featurePair.inEdge2 = (sbyte)current->next;
-                clipVertex.featurePair.outEdge2 = (sbyte)twin->twin;
+                clipVertex.featurePair.InEdge1 = -1;
+                clipVertex.featurePair.OutEdge1 = -1;
+                clipVertex.featurePair.InEdge2 = (sbyte)current->Next;
+                clipVertex.featurePair.OutEdge2 = (sbyte)twin->Twin;
                 clipVertex.position = P;
                 clipVertex.hull2local = vertex;
                 clipVertex.plane = plane;
 
                 output.Add(clipVertex);
 
-                current = hull.GetEdgePtr(current->next);
+                current = hull.GetEdgePtr(current->Next);
 
             } while (current != start);
         }
@@ -273,21 +273,21 @@ namespace VellaDev.Hull
 
             ContactPoint cp = default;
 
-            if (input.index1 < 0 || input.index2 < 0)
+            if (input.Index1 < 0 || input.Index2 < 0)
                 return;
          
-            NativeHalfEdge* edge1 = hull1.GetEdgePtr(input.index1);
-            NativeHalfEdge* twin1 = hull1.GetEdgePtr(edge1->twin);
+            NativeHalfEdge* edge1 = hull1.GetEdgePtr(input.Index1);
+            NativeHalfEdge* twin1 = hull1.GetEdgePtr(edge1->Twin);
 
-            float3 P1 = math.transform(transform1, hull1.GetVertex(edge1->origin));
-            float3 Q1 = math.transform(transform1, hull1.GetVertex(twin1->origin));
+            float3 P1 = math.transform(transform1, hull1.GetVertex(edge1->Origin));
+            float3 Q1 = math.transform(transform1, hull1.GetVertex(twin1->Origin));
             float3 E1 = Q1 - P1;
 
-            NativeHalfEdge* edge2 = hull2.GetEdgePtr(input.index2);
-            NativeHalfEdge* twin2 = hull2.GetEdgePtr(edge2->twin);
+            NativeHalfEdge* edge2 = hull2.GetEdgePtr(input.Index2);
+            NativeHalfEdge* twin2 = hull2.GetEdgePtr(edge2->Twin);
 
-            float3 P2 = math.transform(transform1, hull2.GetVertex(edge2->origin));
-            float3 Q2 = math.transform(transform1, hull2.GetVertex(twin2->origin));
+            float3 P2 = math.transform(transform1, hull2.GetVertex(edge2->Origin));
+            float3 Q2 = math.transform(transform1, hull2.GetVertex(twin2->Origin));
             float3 E2 = Q2 - P2;
 
             float3 normal = math.normalize(math.cross(Q1 - P1, Q2 - P2));
@@ -296,26 +296,26 @@ namespace VellaDev.Hull
             if (math.dot(normal, C2C1) < 0)
             {
                 // Flip
-                output.normal = -normal;
-                cp.id.featurePair.inEdge1 = (sbyte)input.index2;
-                cp.id.featurePair.outEdge1 = (sbyte)(input.index2 + 1);
+                output.Normal = -normal;
+                cp.Id.FeaturePair.InEdge1 = (sbyte)input.Index2;
+                cp.Id.FeaturePair.OutEdge1 = (sbyte)(input.Index2 + 1);
 
-                cp.id.featurePair.inEdge2 = (sbyte)(input.index1 + 1);
-                cp.id.featurePair.outEdge2 = (sbyte)input.index1;
+                cp.Id.FeaturePair.InEdge2 = (sbyte)(input.Index1 + 1);
+                cp.Id.FeaturePair.OutEdge2 = (sbyte)input.Index1;
             }
             else
             {
-                output.normal = normal;
+                output.Normal = normal;
 
-                cp.id.featurePair.inEdge1 = (sbyte)input.index1;
-                cp.id.featurePair.outEdge1 = (sbyte)(input.index1 + 1);
+                cp.Id.FeaturePair.InEdge1 = (sbyte)input.Index1;
+                cp.Id.FeaturePair.OutEdge1 = (sbyte)(input.Index1 + 1);
 
-                cp.id.featurePair.inEdge2 = (sbyte)(input.index2 + 1);
-                cp.id.featurePair.outEdge2 = (sbyte)input.index2;
+                cp.Id.FeaturePair.InEdge2 = (sbyte)(input.Index2 + 1);
+                cp.Id.FeaturePair.OutEdge2 = (sbyte)input.Index2;
             }
 
             // Compute the closest points between the two edges (center point of penetration)
-            b3ClosestPointsSegmentSegment(P1, Q1, P2, Q2, out float3 C1, out float3 C2);
+            ClosestPointsSegmentSegment(P1, Q1, P2, Q2, out float3 C1, out float3 C2);
 
             float3 position = 0.5f * (C1 + C2);
 
@@ -323,14 +323,14 @@ namespace VellaDev.Hull
             //cp.positionOnTarget = Math3d.ProjectPointOnLineSegment(P2, Q2, C2);
             //cp.positionOnSource = Math3d.ProjectPointOnLineSegment(P1, Q1, C1);
 
-            cp.penetration = C1 - C2;
-            cp.position = position;
-            cp.distance = input.distance;
+            cp.Penetration = C1 - C2;
+            cp.Position = position;
+            cp.Distance = input.Distance;
 
             output.Add(cp);
         }
 
-        public static void b3ClosestPointsSegmentSegment(float3 P1, float3 Q1, float3 P2, float3 Q2, out float3 C1, out float3 C2)
+        public static void ClosestPointsSegmentSegment(float3 P1, float3 Q1, float3 P2, float3 Q2, out float3 C1, out float3 C2)
         {
             float3 P2P1 = P1 - P2;
 
