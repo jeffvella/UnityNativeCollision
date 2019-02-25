@@ -10,42 +10,19 @@ using static Unity.Mathematics.math;
 
 namespace VellaDev.Hull
 {
-    public struct DetailedFaceDef
-    {
-        public Vector3 Center;
-        public Vector3 Normal;
-        public List<float3> Verts;
-        public List<int> Indices;
-    }
-
-    public unsafe struct NativeFaceDef
-    {
-        public int vertexCount;
-        public int* vertices;
-        internal int highestIndex;
-    };
-
-    public unsafe struct NativeHullDef
-    {
-        public int faceCount;
-        public int vertexCount;
-        public NativeArray<float3> verticesNative;
-        public NativeArray<NativeFaceDef> facesNative;
-    };
-
     public unsafe struct NativeHull : IDisposable
-    {  
-        public int vertexCount;
-        public int faceCount;
-        public int edgeCount;
+    {
+        public int VertexCount;
+        public int FaceCount;
+        public int EdgeCount;
 
         // Native array is currently not Blittable because of DisposeSentinel being a class.
         // Which means you cannot place inside a NativeArray<T>, which batch operations require.
 
-        public NativeArrayNoLeakDetection<float3> verticesNative;
-        public NativeArrayNoLeakDetection<NativeFace> facesNative;
-        public NativeArrayNoLeakDetection<NativePlane> facesPlanesNative;
-        public NativeArrayNoLeakDetection<NativeHalfEdge> edgesNative;
+        public NativeArrayNoLeakDetection<float3> VerticesNative;
+        public NativeArrayNoLeakDetection<NativeFace> FacesNative;
+        public NativeArrayNoLeakDetection<NativePlane> FacesPlanesNative;
+        public NativeArrayNoLeakDetection<NativeHalfEdge> EdgesNative;
 
         //public NativeArray<float3> verticesNative;
         //public NativeArray<NativeFace> facesNative;
@@ -53,121 +30,81 @@ namespace VellaDev.Hull
         //public NativeArray<NativeHalfEdge> edgesNative;
 
         [NativeDisableUnsafePtrRestriction]
-        public float3* vertices;
+        public float3* Vertices;
 
         [NativeDisableUnsafePtrRestriction]
-        public NativeFace* faces;
+        public NativeFace* Faces;
 
         [NativeDisableUnsafePtrRestriction]
-        public NativePlane* facesPlanes;
+        public NativePlane* FacesPlanes;
 
         [NativeDisableUnsafePtrRestriction]
         public NativeHalfEdge* edges;
 
-        public int _isCreated;
-        public int _isDisposed;
+        private int _isCreated;
+        private int _isDisposed;
 
-        public bool IsValid => _isCreated == 1 && _isDisposed == 0 && (IntPtr)vertices != IntPtr.Zero;
+        public bool IsCreated
+        {
+            get => _isCreated == 1;
+            set => _isCreated = value ? 1 : 0;
+        }
+
+        public bool IsValid => IsCreated && _isDisposed == 0 && (IntPtr)Vertices != IntPtr.Zero;
 
         public void Dispose()
         {
             if (_isDisposed == 0)
             {
-                if (verticesNative.IsCreated)
-                    verticesNative.Dispose();
+                if (VerticesNative.IsCreated)
+                    VerticesNative.Dispose();
 
-                if (facesNative.IsCreated)
-                    facesNative.Dispose();
+                if (FacesNative.IsCreated)
+                    FacesNative.Dispose();
 
-                if (facesPlanesNative.IsCreated)
-                    facesPlanesNative.Dispose();
+                if (FacesPlanesNative.IsCreated)
+                    FacesPlanesNative.Dispose();
 
-                if (edgesNative.IsCreated)
-                    edgesNative.Dispose();
+                if (EdgesNative.IsCreated)
+                    EdgesNative.Dispose();
 
-                vertices = null;
-                faces = null;
-                facesPlanes = null;
+                Vertices = null;
+                Faces = null;
+                FacesPlanes = null;
                 edges = null;
             }
             _isDisposed = 1;
         }
-    }
 
-    public static class NativeHullExtensions
-    {
-        public static unsafe float3 GetVertex(this NativeHull hull, int index)
+        public unsafe float3 GetVertex(int index) => VerticesNative[index];
+        public unsafe ref float3 GetVertexRef(int index) => ref *(Vertices + index);
+        public unsafe float3* GetVertexPtr(int index) => Vertices + index;
+
+        public unsafe NativeHalfEdge GetEdge(int index) => EdgesNative[index];
+        public unsafe ref NativeHalfEdge GetEdgeRef(int index) => ref *(edges + index);
+        public unsafe NativeHalfEdge* GetEdgePtr(int index) => edges + index;
+
+        public unsafe NativeFace GetFace(int index) => FacesNative[index];
+        public unsafe ref NativeFace GetFaceRef(int index) => ref *(Faces + index);
+        public unsafe NativeFace* GetFacePtr(int index) => Faces + index;
+
+
+        public unsafe NativePlane GetPlane(int index) => FacesPlanesNative[index];
+        public unsafe ref NativePlane GetPlaneRef(int index) => ref *(FacesPlanes + index);
+        public unsafe NativePlane* GetPlanePtr(int index) => FacesPlanes + index;
+
+        public unsafe float3 GetSupport(float3 direction)
         {
-            return hull.verticesNative[index];
+            return Vertices[GetSupportIndex(direction)];
         }
 
-        public static unsafe ref float3 GetVertexRef(this NativeHull hull, int index)
-        {
-            return ref *(hull.vertices + index);
-        }
-
-        public static unsafe float3* GetVertexPtr(this NativeHull hull, int index)
-        {
-            return hull.vertices + index;
-        }
-
-        public static unsafe NativeHalfEdge GetEdge(this NativeHull hull, int index)
-        {
-            return hull.edgesNative[index];
-        }
-
-        public static unsafe ref NativeHalfEdge GetEdgeRef(this NativeHull hull, int index)
-        {
-            return ref *(hull.edges + index);
-        }
-
-        public static unsafe NativeHalfEdge* GetEdgePtr(this NativeHull hull, int index)
-        {
-            return hull.edges + index;
-        }
-
-        public static unsafe NativeFace GetFace(this NativeHull hull, int index)
-        {
-            return hull.facesNative[index];
-        }
-
-        public static unsafe ref NativeFace GetFaceRef(this NativeHull hull, int index)
-        {
-            return ref *(hull.faces + index);
-        }
-
-        public static unsafe NativeFace* GetFacePtr(this NativeHull hull, int index)
-        {
-            return hull.faces + index;
-        }
-
-        public static unsafe NativePlane GetPlane(this NativeHull hull, int index)
-        {
-            return hull.facesPlanesNative[index];
-        }
-
-        public static unsafe ref NativePlane GetPlaneRef(this NativeHull hull, int index)
-        {
-            return ref *(hull.facesPlanes + index);
-        }
-
-        public static unsafe NativePlane* GetPlanePtr(this NativeHull hull, int index)
-        {
-            return hull.facesPlanes + index;
-        }
-
-        public static unsafe float3 GetSupport(this NativeHull hull, float3 direction)
-        {
-            return hull.vertices[hull.GetSupportIndex(direction)];
-        }
-
-        public static unsafe int GetSupportIndex(this NativeHull hull, float3 direction)
+        public unsafe int GetSupportIndex(float3 direction)
         {
             int index = 0;
-            float max = dot(direction, hull.vertices[index]);
-            for (int i = 1; i < hull.vertexCount; ++i)
+            float max = dot(direction, Vertices[index]);
+            for (int i = 1; i < VertexCount; ++i)
             {
-                float dot = math.dot(direction, hull.vertices[i]);
+                float dot = math.dot(direction, Vertices[i]);
                 if (dot > max)
                 {
                     index = i;
@@ -176,7 +113,10 @@ namespace VellaDev.Hull
             }
             return index;
         }
+    }
 
+    public static class NativeHullExtensions
+    {
         public static IEnumerable<NativeHalfEdge> GetEdges(this NativeHull hull)
         {
             return new HullAllEdgesEnumerator(hull);
@@ -196,7 +136,6 @@ namespace VellaDev.Hull
         {
             return new HullFaceEdgesEnumerator(hull, faceIndex).Select(v => v.GetOrigin(hull));
         }
-
     }
 
 }

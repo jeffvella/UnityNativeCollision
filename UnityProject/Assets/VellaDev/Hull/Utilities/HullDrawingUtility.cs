@@ -68,21 +68,21 @@ namespace VellaDev.Hull
             float faceExplosionDistance = (options & DebugHullFlags.ExplodeFaces) != 0 ? 0.3f : 0;
 
             // Iterate each twin pair at the same time.
-            for (int j = 0; j < hull.edgeCount; j = j + 2)
+            for (int j = 0; j < hull.EdgeCount; j = j + 2)
             {
                 var edge = hull.GetEdge(j);
                 var twin = hull.GetEdge(j + 1);
 
-                var edgePlane = edge.face != -1 ? hull.GetPlane(edge.face) : new NativePlane();
-                var twinPlane = twin.face != -1 ? hull.GetPlane(twin.face) : new NativePlane();
+                var edgePlane = edge.Face != -1 ? hull.GetPlane(edge.Face) : new NativePlane();
+                var twinPlane = twin.Face != -1 ? hull.GetPlane(twin.Face) : new NativePlane();
 
                 var rotatedEdgeNormal = math.rotate(t, edgePlane.Normal);
                 var rotatedTwinNormal = math.rotate(t, twinPlane.Normal);
 
-                var edgeVertex1 = math.transform(t, hull.GetVertex(edge.origin));
-                var twinVertex1 = math.transform(t, hull.GetVertex(twin.origin));
-                var edgeVertex2 = math.transform(t, hull.GetVertex(edge.origin));
-                var twinVertex2 = math.transform(t, hull.GetVertex(twin.origin));
+                var edgeVertex1 = math.transform(t, hull.GetVertex(edge.Origin));
+                var twinVertex1 = math.transform(t, hull.GetVertex(twin.Origin));
+                var edgeVertex2 = math.transform(t, hull.GetVertex(edge.Origin));
+                var twinVertex2 = math.transform(t, hull.GetVertex(twin.Origin));
 
                 if ((options & DebugHullFlags.Outline) != 0)
                 {
@@ -108,7 +108,7 @@ namespace VellaDev.Hull
             if ((options & DebugHullFlags.Indices) != 0)
             {
                 var dupeCheck = new HashSet<Vector3>();
-                for (int i = 0; i < hull.vertexCount; i++)
+                for (int i = 0; i < hull.VertexCount; i++)
                 {
                     // Offset the label if multiple verts are on the same position.
                     var v = math.transform(t, hull.GetVertex(i));           
@@ -121,19 +121,19 @@ namespace VellaDev.Hull
                 
             if ((options & DebugHullFlags.FaceWinding) != 0)
             {
-                for (int i = 0; i < hull.faceCount; i++)
+                for (int i = 0; i < hull.FaceCount; i++)
                 {
                     var face = hull.GetFace(i);
                     var plane = hull.GetPlane(i);
                     var tPlane = t * plane;
-                    var edge = hull.GetEdge(face.edge);
-                    var startOrigin = edge.origin;
+                    var edge = hull.GetEdge(face.Edge);
+                    var startOrigin = edge.Origin;
 
                     do
                     {
-                        var nextEdge = hull.GetEdge(edge.next);
-                        var startVert = math.transform(t, hull.GetVertex(edge.origin));
-                        var endVert = math.transform(t, hull.GetVertex(nextEdge.origin));
+                        var nextEdge = hull.GetEdge(edge.Next);
+                        var startVert = math.transform(t, hull.GetVertex(edge.Origin));
+                        var endVert = math.transform(t, hull.GetVertex(nextEdge.Origin));
 
                         var center = (endVert + startVert) / 2;
                         var dir = math.normalize(endVert - startVert);
@@ -151,7 +151,7 @@ namespace VellaDev.Hull
 
                         edge = nextEdge;
 
-                    } while (edge.origin != startOrigin);
+                    } while (edge.Origin != startOrigin);
                 }
             }
         }
@@ -185,11 +185,11 @@ namespace VellaDev.Hull
                 if (manifold.Points.Length >= 2)
                 {
                     var end = i > 0 ? manifold.Points[i - 1] : manifold.Points[manifold.Points.Length - 1];
-                    Debug.DrawLine(start.position, end.position, color);                    
+                    Debug.DrawLine(start.Position, end.Position, color);                    
                 }
-                DebugDrawer.DrawSphere(start.position, 0.02f, color.ToOpacity(0.8f));
+                DebugDrawer.DrawSphere(start.Position, 0.02f, color.ToOpacity(0.8f));
             }
-            DebugDrawer.DrawAAConvexPolygon(manifold.Points.ToArray().Select(cp => (Vector3)cp.position).ToArray(), color);
+            DebugDrawer.DrawAAConvexPolygon(manifold.Points.ToArray().Select(cp => (Vector3)cp.Position).ToArray(), color);
         }
 
     }

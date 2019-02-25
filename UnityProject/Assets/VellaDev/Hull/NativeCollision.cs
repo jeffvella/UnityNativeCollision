@@ -32,15 +32,15 @@ namespace VellaDev.Hull
 {
     public struct FaceQueryResult
     {
-        public int index;
-        public float distance;
+        public int Index;
+        public float Distance;
     };
 
     public struct EdgeQueryResult
     {
-        public int index1;
-        public int index2;
-        public float distance;
+        public int Index1;
+        public int Index2;
+        public float Distance;
     };
 
     public struct CollisionInfo
@@ -58,15 +58,15 @@ namespace VellaDev.Hull
             FaceQueryResult faceQuery;
 
             QueryFaceDistance(out faceQuery, transform1, hull1, transform2, hull2);
-            if (faceQuery.distance > 0)
+            if (faceQuery.Distance > 0)
                 return false;
 
             QueryFaceDistance(out faceQuery, transform2, hull2, transform1, hull1);
-            if (faceQuery.distance > 0)
+            if (faceQuery.Distance > 0)
                 return false;
 
             QueryEdgeDistance(out EdgeQueryResult edgeQuery, transform1, hull1, transform2, hull2);
-            if (edgeQuery.distance > 0)
+            if (edgeQuery.Distance > 0)
                 return false;
 
             return true;
@@ -78,7 +78,7 @@ namespace VellaDev.Hull
             QueryFaceDistance(out result.Face1, transform1, hull1, transform2, hull2);
             QueryFaceDistance(out result.Face2, transform2, hull2, transform1, hull1);
             QueryEdgeDistance(out result.Edge, transform1, hull1, transform2, hull2);
-            result.IsColliding = result.Face1.distance < 0 && result.Face2.distance < 0 && result.Edge.distance < 0;
+            result.IsColliding = result.Face1.Distance < 0 && result.Face2.Distance < 0 && result.Edge.Distance < 0;
             return result;
         }
 
@@ -87,19 +87,19 @@ namespace VellaDev.Hull
             // Perform computations in the local space of the second hull.
             RigidTransform transform = math.mul(math.inverse(transform2), transform1);
 
-            result.distance = -float.MaxValue;
-            result.index = -1;
+            result.Distance = -float.MaxValue;
+            result.Index = -1;
 
-            for (int i = 0; i < hull1.faceCount; ++i)
+            for (int i = 0; i < hull1.FaceCount; ++i)
             {
                 NativePlane plane = transform * hull1.GetPlane(i);
                 float3 support = hull2.GetSupport(-plane.Normal);
                 float distance = plane.Distance(support);
 
-                if (distance > result.distance)
+                if (distance > result.Distance)
                 {
-                    result.distance = distance;
-                    result.index = i;
+                    result.Distance = distance;
+                    result.Index = i;
                 }
             }
         }
@@ -111,46 +111,46 @@ namespace VellaDev.Hull
 
             float3 C1 = transform.pos;
 
-            result.distance = -float.MaxValue;
-            result.index1 = -1;
-            result.index2 = -1;
+            result.Distance = -float.MaxValue;
+            result.Index1 = -1;
+            result.Index2 = -1;
 
-            for (int i = 0; i < hull1.edgeCount; i += 2)
+            for (int i = 0; i < hull1.EdgeCount; i += 2)
             {
                 NativeHalfEdge* edge1 = hull1.GetEdgePtr(i);
                 NativeHalfEdge* twin1 = hull1.GetEdgePtr(i + 1);
 
-                Debug.Assert(edge1->twin == i + 1 && twin1->twin == i);
+                Debug.Assert(edge1->Twin == i + 1 && twin1->Twin == i);
 
-                float3 P1 = math.transform(transform, hull1.GetVertex(edge1->origin));
-                float3 Q1 = math.transform(transform, hull1.GetVertex(twin1->origin));
+                float3 P1 = math.transform(transform, hull1.GetVertex(edge1->Origin));
+                float3 Q1 = math.transform(transform, hull1.GetVertex(twin1->Origin));
                 float3 E1 = Q1 - P1;
 
-                float3 U1 = math.rotate(transform, hull1.GetPlane(edge1->face).Normal);
-                float3 V1 = math.rotate(transform, hull1.GetPlane(twin1->face).Normal);
+                float3 U1 = math.rotate(transform, hull1.GetPlane(edge1->Face).Normal);
+                float3 V1 = math.rotate(transform, hull1.GetPlane(twin1->Face).Normal);
 
-                for (int j = 0; j < hull2.edgeCount; j += 2)
+                for (int j = 0; j < hull2.EdgeCount; j += 2)
                 {
                     NativeHalfEdge* edge2 = hull2.GetEdgePtr(j);
                     NativeHalfEdge* twin2 = hull2.GetEdgePtr(j + 1);
 
-                    Debug.Assert(edge2->twin == j + 1 && twin2->twin == j);
+                    Debug.Assert(edge2->Twin == j + 1 && twin2->Twin == j);
 
-                    float3 P2 = hull2.GetVertex(edge2->origin);
-                    float3 Q2 = hull2.GetVertex(twin2->origin);
+                    float3 P2 = hull2.GetVertex(edge2->Origin);
+                    float3 Q2 = hull2.GetVertex(twin2->Origin);
                     float3 E2 = Q2 - P2;
                    
-                    float3 U2 = hull2.GetPlane(edge2->face).Normal;
-                    float3 V2 = hull2.GetPlane(twin2->face).Normal;
+                    float3 U2 = hull2.GetPlane(edge2->Face).Normal;
+                    float3 V2 = hull2.GetPlane(twin2->Face).Normal;
 
                     if (IsMinkowskiFace(U1, V1, -E1, -U2, -V2, -E2))
                     {
                         float distance = Project(P1, E1, P2, E2, C1);
-                        if (distance > result.distance)
+                        if (distance > result.Distance)
                         {
-                            result.index1 = i;
-                            result.index2 = j;
-                            result.distance = distance;
+                            result.Index1 = i;
+                            result.Index2 = j;
+                            result.Distance = distance;
                         }
                     }
                 }

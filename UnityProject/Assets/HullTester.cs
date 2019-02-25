@@ -63,7 +63,7 @@ public class HullTester : MonoBehaviour
 
                     Debug.Assert(result1 == result2);
 
-                    Debug.Log($"Collisions between '{tA.name}'/'{tB.name}' took: {sw1.Elapsed.TotalMilliseconds:N8} (Normal), {sw2.Elapsed.TotalMilliseconds:N8} (Burst)");
+                    Debug.Log($"Collisions between '{tA.name}'/'{tB.name}' took: {sw1.Elapsed.TotalMilliseconds:N4}ms (Normal), {sw2.Elapsed.TotalMilliseconds:N4}ms (Burst)");
                 }
             }
         }
@@ -91,7 +91,7 @@ public class HullTester : MonoBehaviour
             var collisions = NativeBurstCollision.CollisionBatch.Invoke(hulls, results);
             sw3.Stop();
 
-            Debug.Log($"Batch Collisions took {sw3.Elapsed.TotalMilliseconds:N8} ({results.Length} collided)");
+            Debug.Log($"Batch Collisions took {sw3.Elapsed.TotalMilliseconds:N4}ms ({results.Length} collisions from {hulls.Length} hulls)");
 
             if (collisions)
             {
@@ -129,8 +129,8 @@ public class HullTester : MonoBehaviour
         if(DrawMinPenetration)
         {
             var color = collision.IsColliding ? UnityColors.Red.ToOpacity(0.3f) : UnityColors.Yellow.ToOpacity(0.3f);
-            HullDrawingUtility.DrawFaceWithOutline(collision.Face1.index, t1, hull1, color, UnityColors.Black);
-            HullDrawingUtility.DrawFaceWithOutline(collision.Face2.index, t2, hull2, color, UnityColors.Black);
+            HullDrawingUtility.DrawFaceWithOutline(collision.Face1.Index, t1, hull1, color, UnityColors.Black);
+            HullDrawingUtility.DrawFaceWithOutline(collision.Face2.Index, t2, hull2, color, UnityColors.Black);
         }
     }
 

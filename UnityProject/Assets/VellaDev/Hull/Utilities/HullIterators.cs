@@ -8,6 +8,7 @@ namespace VellaDev.Hull
 {
     public static class HullIterators
     {
+        public delegate void ByRefEdgeAction(ref NativeHalfEdge edge);
         public delegate void ByRefFaceEdgeAction(ref NativePlane plane, ref NativeHalfEdge edge);
         public delegate void ByRefIndexedFaceEdgeAction(int i, ref NativePlane plane, ref NativeHalfEdge edge);
 
@@ -15,34 +16,34 @@ namespace VellaDev.Hull
         {
             ref NativeFace face = ref hull.GetFaceRef(faceIndex);
             ref NativePlane plane = ref hull.GetPlaneRef(faceIndex);
-            ref NativeHalfEdge start = ref hull.GetEdgeRef(face.edge);
+            ref NativeHalfEdge start = ref hull.GetEdgeRef(face.Edge);
             ref NativeHalfEdge current = ref start;
             do
             {
                 action?.Invoke(ref plane, ref current);
-                current = ref hull.GetEdgeRef(current.next);
+                current = ref hull.GetEdgeRef(current.Next);
             }
-            while (current.origin != start.origin);
+            while (current.Origin != start.Origin);
         }
 
         public static void IterateFaceTwins(this NativeHull hull, int faceIndex, ByRefFaceEdgeAction action)
         {
             ref NativeFace face = ref hull.GetFaceRef(faceIndex);            
-            ref NativeHalfEdge start = ref hull.GetEdgeRef(face.edge);
+            ref NativeHalfEdge start = ref hull.GetEdgeRef(face.Edge);
             ref NativeHalfEdge current = ref start;
             do
             {
                 ref NativeHalfEdge twin = ref current.GetTwin(hull);
-                ref NativePlane twinPlane = ref hull.GetPlaneRef(twin.face);
+                ref NativePlane twinPlane = ref hull.GetPlaneRef(twin.Face);
                 action?.Invoke(ref twinPlane, ref twin);
-                current = ref hull.GetEdgeRef(current.next);
+                current = ref hull.GetEdgeRef(current.Next);
             }
-            while (current.origin != start.origin);
+            while (current.Origin != start.Origin);
         }
 
         public static void IterateFaces(this NativeHull hull, ByRefFaceEdgeAction action)
         {
-            for (int i = 0; i < hull.faceCount; i++)
+            for (int i = 0; i < hull.FaceCount; i++)
             {        
                 ref var firstEdge = ref hull.GetFaceRef(i).GetFirstEdge(hull);
                 action?.Invoke(ref hull.GetPlaneRef(i), ref firstEdge);
@@ -51,17 +52,17 @@ namespace VellaDev.Hull
 
         public static void IterateFaces(this NativeHull hull, ByRefIndexedFaceEdgeAction action)
         {
-            for (int i = 0; i < hull.faceCount; i++)
+            for (int i = 0; i < hull.FaceCount; i++)
             {
                 ref var firstEdge = ref hull.GetFaceRef(i).GetFirstEdge(hull);
                 action?.Invoke(i, ref hull.GetPlaneRef(i), ref firstEdge);
             }
         }
 
-        public delegate void ByRefEdgeAction(ref NativeHalfEdge edge);
+
         public static void IterateEdges(this NativeHull hull, ByRefEdgeAction action)
         {
-            for (int i = 0; i < hull.edgeCount; i++)
+            for (int i = 0; i < hull.EdgeCount; i++)
             {
                 action?.Invoke(ref hull.GetEdgeRef(i));
             }
@@ -69,7 +70,7 @@ namespace VellaDev.Hull
 
         public static void IterateVertices(this NativeHull hull, Action<float3> action)
         {
-            for (int i = 0; i < hull.edgeCount; i++)
+            for (int i = 0; i < hull.EdgeCount; i++)
             {
                 action?.Invoke(hull.GetEdgeRef(i).GetOrigin(hull));
             }
@@ -88,7 +89,7 @@ namespace VellaDev.Hull
 
         public bool MoveNext()
         {
-            if (_currentIndex + 2 >= _hull.edgeCount)
+            if (_currentIndex + 2 >= _hull.EdgeCount)
                 return false;
 
             _currentIndex = _currentIndex + 2;
@@ -118,7 +119,7 @@ namespace VellaDev.Hull
         public HullFaceEdgesEnumerator(NativeHull hull, int faceIndex)
         {
             _hull = hull;
-            _offset = hull.GetFace(faceIndex).edge;
+            _offset = hull.GetFace(faceIndex).Edge;
         }
 
         public bool MoveNext()
@@ -130,11 +131,11 @@ namespace VellaDev.Hull
             else
             {
                 ref var edge = ref _hull.GetEdgeRef(_edgeIndex);
-                if (edge.next == _offset)
+                if (edge.Next == _offset)
                 {
                     return false;
                 }
-                _edgeIndex = edge.next;
+                _edgeIndex = edge.Next;
             }
             _currentIndex++;
             return true;
