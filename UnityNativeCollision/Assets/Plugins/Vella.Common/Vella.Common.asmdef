@@ -1,0 +1,16 @@
+{
+    "name": "Vella.Common",
+    "references": [
+        "GUID:b92ff8b696eb46a4b90382b319e963fe",
+        "GUID:e0cd26848372d4e5c891c569017e11f1"
+    ],
+    "optionalUnityReferences": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": []
+}

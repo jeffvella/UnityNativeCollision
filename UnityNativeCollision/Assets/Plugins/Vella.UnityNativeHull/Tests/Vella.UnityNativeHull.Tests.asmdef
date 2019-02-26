@@ -1,0 +1,21 @@
+{
+    "name": "Vella.NativeHull.Tests",
+    "references": [
+        "GUID:d8b63aba1907145bea998dd612889d6b",
+        "GUID:56d587dec131a3d49b5ef08d8a57d219",
+        "GUID:b46976b8a773ae341bbd9ca990e20dfb"
+    ],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": []
+}
