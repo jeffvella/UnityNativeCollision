@@ -195,6 +195,9 @@ namespace Vella.UnityNativeHull
             }
 
             result.IsCreated = true;
+
+            HullValidation.ValidateHull(result);
+
             return result;
         }
 

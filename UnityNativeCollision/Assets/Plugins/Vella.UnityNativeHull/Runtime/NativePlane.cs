@@ -1,8 +1,10 @@
-﻿using Unity.Mathematics;
+﻿using System.Diagnostics;
+using Unity.Mathematics;
 using static Unity.Mathematics.math;
 
 namespace Vella.UnityNativeHull
 {
+    [DebuggerDisplay("Plane: {Normal}, {Offset}")]
     public unsafe struct NativePlane
     {
         public float3 Normal;

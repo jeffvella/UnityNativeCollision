@@ -2,13 +2,14 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using Unity.Mathematics;
 using UnityEngine;
 using Vella.Common;
 using Vella.UnityNativeHull;
 using Debug = UnityEngine.Debug;
 
-public class ValidationCommon 
+public class HullValidation 
 {
     [Conditional("UNITY_EDITOR")]
     public unsafe static void ValidateHull(NativeHull hull)
@@ -28,6 +29,7 @@ public class ValidationCommon
         }
 
         CheckAllVerticesAreUsed(hull);
+        CheckForInvalidUnusedEdges(hull);
     }
 
     [Conditional("UNITY_EDITOR")]
@@ -35,24 +37,37 @@ public class ValidationCommon
     {
         for (int i = 0; i < hull.VertexCount; i++)
         {
-            var refCount = 0;
+            bool isUsed = false;
             for (int j = 0; j < hull.EdgeCount; j++)
             {
                 NativeHalfEdge edge = hull.GetEdge(j);
                 if (edge.Origin == i)
                 {
-                    refCount++;
+                    isUsed = true;
+                    break;
                 }
             }
 
-            Debug.Assert(refCount != 0, 
+            Debug.Assert(isUsed, 
                 "All vertices should be used by an edge");
+        }
+    }
+
+    [Conditional("UNITY_EDITOR")]
+    public static void CheckForInvalidUnusedEdges(NativeHull hull)
+    {
+        for (int j = 0; j < hull.EdgeCount; j++)
+        {  
+            ValidateEdge(hull, j);
         }
     }
 
     [Conditional("UNITY_EDITOR")]
     public static void ValidateFace(NativeHull hull, int faceIndex)
     {
+        if (faceIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(faceIndex));
+
         NativeFace face = hull.GetFace(faceIndex);
 
         Debug.Assert(face.Edge >= 0,
@@ -97,7 +112,19 @@ public class ValidationCommon
     [Conditional("UNITY_EDITOR")]
     public static void ValidateEdge(NativeHull hull, int edgeIndex)
     {
+        if (edgeIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(edgeIndex));
+
         var edge = hull.GetEdge(edgeIndex);
+
+        if (edge.Twin == -1 || edge.Prev == -1 || edge.Next == -1)
+        {            
+            Debug.LogError($"Edge {edgeIndex} has an out of range index for twin, prev or next");
+
+            // Avoid exceptions so our debug visualizations can aid in debugging the issue.
+            return;
+        }
+
         var twin = edge.GetTwin(hull);
 
         Debug.Assert(edgeIndex == twin.Twin,
@@ -120,5 +147,6 @@ public class ValidationCommon
 
         Debug.Assert(edge.Face < hull.FaceCount,
             "An edge references an out of range face index");
+
     }
 }
