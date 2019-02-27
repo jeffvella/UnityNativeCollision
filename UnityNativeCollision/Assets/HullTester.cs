@@ -34,22 +34,26 @@ public class HullTester : MonoBehaviour
     {
         for (int i = 0; i < Transforms.Count; ++i)
         {
+            var tA = Transforms[i];
+            if (tA == null)
+                continue;
+
+            var hullA = Hulls[tA.GetInstanceID()].Hull;
+            var transformA = new RigidTransform(tA.rotation, tA.position);
+            HullDrawingUtility.DrawDebugHull(hullA, transformA, HullDrawingOptions);
+
             for (int j = i + 1; j < Transforms.Count; j++)
             {
-                var tA = Transforms[i];
                 var tB = Transforms[j];
-
-                if (tA == null || tB == null)
+                if (tB == null)
                     continue;
 
                 if (!tA.hasChanged && !tB.hasChanged)
                     continue;
-
-                var hullA = Hulls[tA.GetInstanceID()].Hull;
+                
                 var hullB = Hulls[tB.GetInstanceID()].Hull;
-
-                var transformA = new RigidTransform(tA.rotation, tA.position);
                 var transformB = new RigidTransform(tB.rotation, tB.position);
+                HullDrawingUtility.DrawDebugHull(hullB, transformB, HullDrawingOptions);
 
                 DrawHullCollision(transformA, hullA, transformB, hullB);
 
@@ -107,14 +111,8 @@ public class HullTester : MonoBehaviour
 
     public void DrawHullCollision(RigidTransform t1, NativeHull hull1, RigidTransform t2, NativeHull hull2)
     {
-        if (t1.Equals(t2))
-            return;
 
         var collision = NativeCollision.GetDebugCollisionInfo(t1, hull1, t2, hull2);
-
-        HullDrawingUtility.DrawDebugHull(hull1, t1, HullDrawingOptions);
-        HullDrawingUtility.DrawDebugHull(hull2, t2, HullDrawingOptions);
-
         if (collision.IsColliding)
         {
             if (NativeIntersection.NativeHullHullContact(out NativeManifold result, t1, hull1, t2, hull2))
