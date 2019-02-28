@@ -19,7 +19,8 @@ public class HullTester : MonoBehaviour
     public DebugHullFlags HullDrawingOptions = DebugHullFlags.Outline;
 
     public bool DrawMinPenetration;
-    public bool LogPerformance;
+    public bool LogCollisions;
+    public bool LogClosestPoint;
 
     private Dictionary<int, (Transform Transform, NativeHull Hull)> Hulls;
 
@@ -40,7 +41,23 @@ public class HullTester : MonoBehaviour
 
             var hullA = Hulls[tA.GetInstanceID()].Hull;
             var transformA = new RigidTransform(tA.rotation, tA.position);
+
             HullDrawingUtility.DrawDebugHull(hullA, transformA, HullDrawingOptions);
+
+            if (LogClosestPoint)
+            {
+                var sw3 = System.Diagnostics.Stopwatch.StartNew();
+                var result3 = HullCollision.ClosestPoint(transformA, hullA, 0);
+                sw3.Stop();
+
+                var sw4 = System.Diagnostics.Stopwatch.StartNew();
+                var result4 = NativeBurstCollision.ClosestPoint.Invoke(transformA, hullA, 0);
+                sw4.Stop();
+
+                DebugDrawer.DrawSphere(result4, 0.1f, Color.blue);
+                DebugDrawer.DrawLine(result4, Vector3.zero, Color.blue);
+                Debug.Log($"ClosestPoint between '{tA.name}' and world zero took: {sw3.Elapsed.TotalMilliseconds:N4}ms (Normal), {sw4.Elapsed.TotalMilliseconds:N4}ms (Burst)");
+            }
 
             for (int j = i + 1; j < Transforms.Count; j++)
             {
@@ -57,10 +74,10 @@ public class HullTester : MonoBehaviour
 
                 DrawHullCollision(transformA, hullA, transformB, hullB);
 
-                if (LogPerformance)
+                if (LogCollisions)
                 {
                     var sw1 = System.Diagnostics.Stopwatch.StartNew();
-                    var result1 = NativeCollision.IsCollision(transformA, hullA, transformB, hullB);
+                    var result1 = HullCollision.IsCollision(transformA, hullA, transformB, hullB);
                     sw1.Stop();
 
                     var sw2 = System.Diagnostics.Stopwatch.StartNew();
@@ -74,7 +91,7 @@ public class HullTester : MonoBehaviour
             }
         }
 
-        if(LogPerformance)
+        if(LogCollisions)
         {
             TestBatchCollision();
         }
@@ -112,7 +129,7 @@ public class HullTester : MonoBehaviour
     public void DrawHullCollision(RigidTransform t1, NativeHull hull1, RigidTransform t2, NativeHull hull2)
     {
 
-        var collision = NativeCollision.GetDebugCollisionInfo(t1, hull1, t2, hull2);
+        var collision = HullCollision.GetDebugCollisionInfo(t1, hull1, t2, hull2);
         if (collision.IsColliding)
         {
             if (NativeIntersection.NativeHullHullContact(out NativeManifold result, t1, hull1, t2, hull2))

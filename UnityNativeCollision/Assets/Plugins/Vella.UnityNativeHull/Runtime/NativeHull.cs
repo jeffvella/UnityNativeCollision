@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
+using UnityEngine;
 using Vella.Common;
 
 namespace Vella.UnityNativeHull
@@ -115,29 +116,31 @@ namespace Vella.UnityNativeHull
             }
             return index;
         }
+
     }
 
     public static class NativeHullExtensions
     {
-        public static IEnumerable<NativeHalfEdge> GetEdges(this NativeHull hull)
+        public static EdgeEnumerator GetEdges(this NativeHull hull)
         {
-            return new HullAllEdgesEnumerator(hull);
+            return new EdgeEnumerator(hull);
         }
 
-        public static IEnumerable<NativeHalfEdge> GetEdges(this NativeHull hull, int faceIndex)
+        public static EdgeEnumerator GetEdges(this NativeHull hull, int faceIndex)
         {
-            return new HullFaceEdgesEnumerator(hull, faceIndex);
+            return new EdgeEnumerator(hull, faceIndex);
         }
 
-        public static IEnumerable<float3> GetVertices(this NativeHull hull)
+        public static IList<float3> GetVertices(this NativeHull hull, int faceIndex)
         {
-            return new HullAllEdgesEnumerator(hull).Select(v => v.GetOrigin(hull));
+            var result = new List<float3>();
+            foreach(var edge in GetEdges(hull, faceIndex))
+            {
+                result.Add(edge.GetOrigin(hull));
+            }
+            return result;
         }
 
-        public static IEnumerable<float3> GetVertices(this NativeHull hull, int faceIndex)
-        {
-            return new HullFaceEdgesEnumerator(hull, faceIndex).Select(v => v.GetOrigin(hull));
-        }
     }
 
 }

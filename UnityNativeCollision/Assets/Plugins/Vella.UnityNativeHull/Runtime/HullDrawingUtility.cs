@@ -99,11 +99,12 @@ namespace Vella.UnityNativeHull
 
             if ((options & DebugHullFlags.PlaneNormals) != 0)
             {
-                hull.IterateFaces((int index, ref NativePlane plane, ref NativeHalfEdge firstEdge) =>
+                for (int i = 0; i < hull.FaceCount; i++)
                 {
-                    var tPlane = plane.Transform(t);
-                    DebugDrawer.DebugArrow(tPlane.Position, tPlane.Rotation * 0.2f, BaseColor);
-                });
+                    var centroid = math.transform(t, hull.GetFace(i).CalculateFaceCentroid(hull));
+                    var normal = math.rotate(t, hull.GetPlane(i).Normal);
+                    DebugDrawer.DrawArrow(centroid, normal * 0.2f, BaseColor);  
+                }
             }
 
             if ((options & DebugHullFlags.Indices) != 0)
@@ -119,7 +120,7 @@ namespace Vella.UnityNativeHull
                     dupeCheck.Add(v);
                 }
             }
-                
+
             if ((options & DebugHullFlags.FaceWinding) != 0)
             {
                 for (int i = 0; i < hull.FaceCount; i++)
@@ -143,11 +144,11 @@ namespace Vella.UnityNativeHull
 
                         if ((options & DebugHullFlags.ExplodeFaces) != 0)
                         {
-                            DebugDrawer.DebugArrow(center + tPlane.Normal * faceExplosionDistance, dir * 0.2f, Color.black);
+                            DebugDrawer.DrawArrow(center + tPlane.Normal * faceExplosionDistance, dir * 0.2f, Color.black);
                         }
                         else
                         {
-                            DebugDrawer.DebugArrow(center + tPlane.Normal * faceExplosionDistance + insetDir * 0.1f, dir * 0.2f, Color.black);                            
+                            DebugDrawer.DrawArrow(center + tPlane.Normal * faceExplosionDistance + insetDir * 0.1f, dir * 0.2f, Color.black);                            
                         }
 
                         edge = nextEdge;
