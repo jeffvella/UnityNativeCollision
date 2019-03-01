@@ -25,7 +25,12 @@
  * http://www.gamedev.net/topic/667499-3d-sat-problem/ 
  */
 
+using System;
+using System.Linq;
+using Unity.Collections;
 using Unity.Mathematics;
+using UnityEngine;
+using Vella.Common;
 using Debug = UnityEngine.Debug;
 
 namespace Vella.UnityNativeHull
@@ -51,7 +56,7 @@ namespace Vella.UnityNativeHull
         public EdgeQueryResult Edge;
     }
 
-    public class NativeCollision
+    public class HullCollision
     {
         public static bool IsCollision(RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
         {
@@ -197,6 +202,64 @@ namespace Vella.UnityNativeHull
 
             // Return the signed distance.
             return math.dot(N, P2 - P1);
+        }
+
+        public static bool ContainsPoint(RigidTransform t, NativeHull hull, float3 point)
+        {
+            float maxDistance = -float.MaxValue;
+            for (int i = 0; i < hull.FaceCount; ++i)
+            {
+                NativePlane plane = t * hull.GetPlane(i);
+                float d = plane.Distance(point);
+                if (d > maxDistance)
+                {
+                    maxDistance = d;
+                }
+            }
+            return maxDistance < 0;
+        }
+
+        public static float3 ClosestPoint(RigidTransform t, NativeHull hull, float3 point)
+        {
+            float distance = -float.MaxValue;
+            int closestFaceIndex = -1;
+            NativePlane closestPlane = default;
+
+            // Find the closest face plane.
+            for (int i = 0; i < hull.FaceCount; ++i)
+            {
+                NativePlane plane = t * hull.GetPlane(i);
+                float d = plane.Distance(point);
+                if (d > distance)
+                {
+                    distance = d;
+                    closestFaceIndex = i;
+                    closestPlane = plane;
+                }
+            }
+
+            var closestPlanePoint = closestPlane.ClosestPoint(point);
+            if (distance > 0)
+            {
+                // Use a point along the closest edge if the plane point would be outside the face bounds.
+                ref NativeFace face = ref hull.GetFaceRef(closestFaceIndex);
+                ref NativeHalfEdge start = ref hull.GetEdgeRef(face.Edge);
+                ref NativeHalfEdge current = ref start;
+                do
+                {
+                    var v1 = math.transform(t, current.GetOrigin(hull));
+                    var v2 = math.transform(t, current.GetTwinOrigin(hull));
+
+                    var signedDistance = math.dot(math.cross(v2, v1), closestPlanePoint);
+                    if (signedDistance < 0)
+                    {
+                        return MathUtility.ProjectPointOnLineSegment(v1, v2, point);
+                    }
+                    current = ref hull.GetEdgeRef(current.Next);
+                }
+                while (current.Origin != start.Origin);
+            }
+            return closestPlanePoint;
         }
     }
 

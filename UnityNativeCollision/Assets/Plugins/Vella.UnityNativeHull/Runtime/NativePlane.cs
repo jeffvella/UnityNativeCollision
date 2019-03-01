@@ -1,8 +1,11 @@
-﻿using Unity.Mathematics;
+﻿using System.Diagnostics;
+using Unity.Mathematics;
+using UnityEngine;
 using static Unity.Mathematics.math;
 
 namespace Vella.UnityNativeHull
 {
+    [DebuggerDisplay("Plane: {Normal}, {Offset}")]
     public unsafe struct NativePlane
     {
         public float3 Normal;
@@ -51,5 +54,37 @@ namespace Vella.UnityNativeHull
             return new NativePlane(normal, plane.Offset + dot(normal, t.pos));
         }
 
+        /// <summary>
+        /// Is a point on the positive side of the plane
+        /// </summary>
+        public bool IsPositiveSide(float3 point)
+        {
+            return dot(Normal, point) + Offset > 0.0;
+        }
+
+        /// <summary>
+        /// If two points on the same side of the plane
+        /// </summary>
+        public bool SameSide(float3 a, float3 b)
+        {
+            float distanceToPoint1 = Distance(a);
+            float distanceToPoint2 = Distance(b);
+            return distanceToPoint1 > 0.0 && distanceToPoint2 > 0.0 || distanceToPoint1 <= 0.0 && distanceToPoint2 <= 0.0;
+        }
+
+        public bool Raycast(UnityEngine.Ray ray, out float enter)
+        {
+            float a = dot(ray.direction, Normal);
+            float num = -dot(ray.origin, Normal) - Offset;
+            if (Mathf.Approximately(a, 0.0f))
+            {
+                enter = 0.0f;
+                return false;
+            }
+            enter = num / a;
+            return enter > 0.0;
+        }
+
+        public Plane Flipped => new Plane(-Normal, -Offset);
     };
 }

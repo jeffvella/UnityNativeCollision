@@ -99,7 +99,7 @@ public class BoxCreation
 
             for (int i = 0; i < box.EdgeCount; i++)
             {
-                ValidationCommon.ValidateEdge(box, i);
+                HullValidation.ValidateEdge(box, i);
             }
         }
     }
@@ -113,7 +113,7 @@ public class BoxCreation
 
             for (int i = 0; i < box.FaceCount; i++)
             {
-                ValidationCommon.ValidateFace(box, i);
+                HullValidation.ValidateFace(box, i);
             }
         }
     }

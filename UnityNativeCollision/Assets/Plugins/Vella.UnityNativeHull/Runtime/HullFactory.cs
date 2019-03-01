@@ -195,6 +195,9 @@ namespace Vella.UnityNativeHull
             }
 
             result.IsCreated = true;
+
+            HullValidation.ValidateHull(result);
+
             return result;
         }
 
@@ -317,7 +320,7 @@ namespace Vella.UnityNativeHull
             hull.EdgesNative = new NativeArrayNoLeakDetection<NativeHalfEdge>(hull.EdgeCount, Allocator.Persistent);
             for (int j = 0; j < hull.EdgeCount; j++)
             {
-                hull.EdgesNative[j] = edgesList[j];
+                hull.EdgesNative[j] = edgesList[j];                
             }
 
             hull.Edges = (NativeHalfEdge*)hull.EdgesNative.GetUnsafePtr();
@@ -364,8 +367,13 @@ namespace Vella.UnityNativeHull
                     centroid += v1;
                 }
 
+                centroid = centroid / vertCount;
+
                 hull.Planes[i].Normal = math.normalize(normal);
-                hull.Planes[i].Offset = math.dot(math.normalize(normal), centroid) / vertCount;
+                hull.Planes[i].Offset = math.dot(math.normalize(normal), centroid);
+
+                //hull.Planes[i].Normal = math.normalize(normal);
+                //hull.Planes[i].Offset = math.dot(math.normalize(normal), centroid) / vertCount;
             }
 
             float3 Newell(float3 a, float3 b)

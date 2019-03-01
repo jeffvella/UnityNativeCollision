@@ -28,6 +28,8 @@ namespace Vella.Common
     /// </summary>
     public static class DebugDrawer
     {
+        public static Color DefaultColor = Color.white;
+
         private static List<IDebugDrawing> Drawings = new List<IDebugDrawing>();
 
 #if UNITY_EDITOR
@@ -98,13 +100,49 @@ namespace Vella.Common
         }
 
         /// <summary>
+        /// Draw a text label in 3D space.
+        /// </summary>
+        /// <param name="position">Where to draw the label in world coordinates</param>
+        /// <param name="text">What the label should say</param>
+        /// <param name="style">Style controlling how the label should look</param>
+        [Conditional("UNITY_EDITOR")]
+        public static void DrawLine(Vector3 start, Vector3 end, Color? color = null)
+        {
+            Debug.DrawLine(start, end, color ?? DefaultColor);
+        }
+
+        /// <summary>
+        /// Draw a debug dotted line.
+        /// </summary>
+        /// <param name="start">start position in world space</param>
+        /// <param name="end">end position in world space</param>
+        /// <param name="color">color of the line</param>
+        /// <param name="GapSize">The space between dots in pixels</param>
+        [Conditional("UNITY_EDITOR")]
+        public static void DrawDottedLine(Vector3 start, Vector3 end, Color? color = null, float GapSize = default)
+        {
+            if(GapSize == default)
+            {
+                GapSize = Vector3.Distance(Camera.main.transform.position, start);
+            }
+
+            Draw(new DottedLineDrawing
+            {
+                Color = color ?? DefaultColor,
+                Start = start,
+                End = end,
+                GapSize = GapSize,
+            });
+        }
+
+        /// <summary>
         /// Draw a solid outlined rectangle in 3D space.
         /// </summary>
         /// <param name="verts">The screen coodinates rectangle.</param>
         /// <param name="faceColor">The color of the rectangle's face.</param>
         /// <param name="outlineColor">The outline color of the rectangle.</param>
         [Conditional("UNITY_EDITOR")]
-        public static void DrawSolidRectangleWithOutline(Rect rectangle, Color faceColor, Color outlineColor)
+        public static void DrawSolidRectangleWithOutline(Rect rectangle, Color? faceColor = null, Color? outlineColor = null)
         {
             Vector3[] verts = new Vector3[]
             {
@@ -116,8 +154,8 @@ namespace Vella.Common
 
             Draw(new RectangleWithOutlineDrawing
             {
-                FaceColor = faceColor,
-                OutlineColor = outlineColor,
+                FaceColor = faceColor ?? DefaultColor,
+                OutlineColor = outlineColor ?? DefaultColor,
                 Verts = verts,
             });
         }
@@ -129,12 +167,12 @@ namespace Vella.Common
         /// <param name="faceColor">The color of the rectangle's face.</param>
         /// <param name="outlineColor">The outline color of the rectangle.</param>
         [Conditional("UNITY_EDITOR")]
-        public static void DrawSolidRectangleWithOutline(Vector3[] verts, Color faceColor, Color outlineColor)
+        public static void DrawSolidRectangleWithOutline(Vector3[] verts, Color? faceColor = null, Color? outlineColor = null)
         {
             Draw(new RectangleWithOutlineDrawing
             {
-                FaceColor = faceColor,
-                OutlineColor = outlineColor,
+                FaceColor = faceColor ?? DefaultColor,
+                OutlineColor = outlineColor ?? DefaultColor,
                 Verts = verts,
             });
         }
@@ -145,11 +183,11 @@ namespace Vella.Common
         /// <param name="verts">List of points describing the convex polygon</param>
         /// <param name="faceColor"></param>
         [Conditional("UNITY_EDITOR")]
-        public static void DrawAAConvexPolygon(Vector3[] verts, Color color)
+        public static void DrawAAConvexPolygon(Vector3[] verts, Color? color = null)
         {
             Draw(new PolygonDrawing
             {
-                Color = color,
+                Color = color ?? DefaultColor,
                 Verts = verts,
             });
         }
@@ -160,11 +198,11 @@ namespace Vella.Common
         /// <param name="verts">List of points describing the convex polygon</param>
         /// <param name="faceColor"></param>
         [Conditional("UNITY_EDITOR")]
-        public static void DrawSphere(Vector3 center, float radius, Color color)
+        public static void DrawSphere(Vector3 center, float radius, Color? color = null)
         {
             Draw(new SphereDrawing
             {
-                Color = color,
+                Color = color ?? DefaultColor,
                 Center = center,
                 Radius = radius,
             });
@@ -179,7 +217,7 @@ namespace Vella.Common
         /// <param name="duration">How long to draw the arrow.</param>
         /// <param name="depthTest">Whether or not the arrow should be faded when behind other objects. </param>
         [Conditional("UNITY_EDITOR")]
-        public static void DebugArrow(Vector3 position, Vector3 direction, Color color, float duration = 0, bool depthTest = true)
+        public static void DrawArrow(Vector3 position, Vector3 direction, Color? color = null, float duration = 0, bool depthTest = true)
         {
             /// Debug Extension
             /// By Arkham Interactive
@@ -188,8 +226,8 @@ namespace Vella.Common
             /// 	- Attempts to mimic Unity's existing debugging behaviour for ease-of-use.
             /// 	- Includes gizmo drawing methods for less memory-intensive debug visualization.   
 
-            Debug.DrawRay(position, direction, color, duration, depthTest);
-            DebugCone(position + direction, -direction * 0.333f, color, 15, duration, depthTest);
+            Debug.DrawRay(position, direction, color ?? DefaultColor, duration, depthTest);
+            DrawCone(position + direction, -direction * 0.333f, color ?? DefaultColor, 15, duration, depthTest);
         }
 
         /// <summary
@@ -209,7 +247,7 @@ namespace Vella.Common
             /// 	- Static class that extends Unity's debugging functionallity.
             /// 	- Attempts to mimic Unity's existing debugging behaviour for ease-of-use.
             /// 	- Includes gizmo drawing methods for less memory-intensive debug visualization.
-            color = (color == default) ? Color.white : color;
+            color = (color != default) ? color : DefaultColor;
             Debug.DrawRay(position + (Vector3.up * (scale * 0.25f)), -Vector3.up * scale * 0.5f, color, duration, depthTest);
             Debug.DrawRay(position + (Vector3.right * (scale * 0.25f)), -Vector3.right * scale * 0.5f, color, duration, depthTest);
             Debug.DrawRay(position + (Vector3.forward * (scale * 0.25f)), -Vector3.forward * scale * 0.5f, color, duration, depthTest);
@@ -225,7 +263,7 @@ namespace Vella.Common
         /// <param name="duration">How long to draw the circle.</param>
         /// <param name="depthTest">Whether or not the circle should be faded when behind other objects.</param>
         [Conditional("UNITY_EDITOR")]
-        public static void DebugCircle(Vector3 position, Vector3 up, Color color, float radius = 1.0f, float duration = 0, bool depthTest = true)
+        public static void DrawCircle(Vector3 position, Vector3 up, float radius = 1.0f, Color? color = null, float duration = 0, bool depthTest = true)
         {
             /// Debug Extension
             /// By Arkham Interactive
@@ -255,8 +293,6 @@ namespace Vella.Common
             Vector3 _lastPoint = position + matrix.MultiplyPoint3x4(new Vector3(Mathf.Cos(0), 0, Mathf.Sin(0)));
             Vector3 _nextPoint = Vector3.zero;
 
-            color = (color == default) ? Color.white : color;
-
             for (var i = 0; i < 91; i++)
             {
                 _nextPoint.x = Mathf.Cos((i * 4) * Mathf.Deg2Rad);
@@ -265,7 +301,7 @@ namespace Vella.Common
 
                 _nextPoint = position + matrix.MultiplyPoint3x4(_nextPoint);
 
-                Debug.DrawLine(_lastPoint, _nextPoint, color, duration, depthTest);
+                Debug.DrawLine(_lastPoint, _nextPoint, color ?? DefaultColor, duration, depthTest);
                 _lastPoint = _nextPoint;
             }
         }
@@ -280,7 +316,7 @@ namespace Vella.Common
         /// <param name="duration">How long to draw the cone.</param>
         /// <param name="depthTest">Whether or not the cone should be faded when behind other objects.</param>
         [Conditional("UNITY_EDITOR")]
-        public static void DebugCone(Vector3 position, Vector3 direction, Color color, float angle = 45, float duration = 0, bool depthTest = true)
+        public static void DrawCone(Vector3 position, Vector3 direction, Color color = default, float angle = 45, float duration = 0, bool depthTest = true)
         {
             /// Debug Extension
             /// By Arkham Interactive
@@ -305,13 +341,14 @@ namespace Vella.Common
 
             farPlane.Raycast(distRay, out dist);
 
+            color = color != default ? color : Color.white;
             Debug.DrawRay(position, slerpedVector.normalized * dist, color);
             Debug.DrawRay(position, Vector3.Slerp(_forward, -_up, angle / 90.0f).normalized * dist, color, duration, depthTest);
             Debug.DrawRay(position, Vector3.Slerp(_forward, _right, angle / 90.0f).normalized * dist, color, duration, depthTest);
             Debug.DrawRay(position, Vector3.Slerp(_forward, -_right, angle / 90.0f).normalized * dist, color, duration, depthTest);
 
-            DebugCircle(position + _forward, direction, color, (_forward - (slerpedVector.normalized * dist)).magnitude, duration, depthTest);
-            DebugCircle(position + (_forward * 0.5f), direction, color, ((_forward * 0.5f) - (slerpedVector.normalized * (dist * 0.5f))).magnitude, duration, depthTest);
+            DrawCircle(position + _forward, direction, (_forward - (slerpedVector.normalized * dist)).magnitude, color, duration, depthTest);
+            DrawCircle(position + (_forward * 0.5f), direction, ((_forward * 0.5f) - (slerpedVector.normalized * (dist * 0.5f))).magnitude, color, duration, depthTest);
         }
 
     }
@@ -356,6 +393,26 @@ namespace Vella.Common
 #if UNITY_EDITOR
             Handles.color = Color;
             Handles.DrawAAConvexPolygon(Verts);
+#endif
+        }
+    }
+
+    public struct DottedLineDrawing : IDebugDrawing
+    {
+        public Color Color;
+        public Vector3 Start;
+        public Vector3 End;
+
+        /// <summary>
+        /// The spacing between the dots in pixels.
+        /// </summary>
+        public float GapSize;
+
+        public void Draw()
+        {
+#if UNITY_EDITOR
+            Handles.color = Color;
+            Handles.DrawDottedLine(Start,End, GapSize);
 #endif
         }
     }

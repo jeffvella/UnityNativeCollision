@@ -2,6 +2,7 @@
 using Unity.Collections;
 using Unity.Burst;
 using Vella.Common;
+using static Vella.UnityNativeHull.HullIterators;
 
 namespace Vella.UnityNativeHull
 {
@@ -19,14 +20,15 @@ namespace Vella.UnityNativeHull
         public BatchCollisionInput B;
     }
 
-    public static class NativeBurstCollision
+    public static class HullBurstCollision
     {
         [BurstCompile]
         public struct IsCollision : IBurstFunction<RigidTransform, NativeHull, RigidTransform, NativeHull, bool>
         {
+
             public bool Execute(RigidTransform t1, NativeHull hull1, RigidTransform t2, NativeHull hull2)
             {
-                return NativeCollision.IsCollision(t1, hull1, t2, hull2);
+                return HullCollision.IsCollision(t1, hull1, t2, hull2);
             }
 
             public static bool Invoke(RigidTransform t1, NativeHull hull1, RigidTransform t2, NativeHull hull2)
@@ -35,6 +37,38 @@ namespace Vella.UnityNativeHull
             }
 
             public static IsCollision Instance { get; } = new IsCollision();
+        }
+
+        [BurstCompile]
+        public struct ContainsPoint : IBurstFunction<RigidTransform, NativeHull, float3, bool>
+        {
+            public bool Execute(RigidTransform t1, NativeHull hull1, float3 point)
+            {
+                return HullCollision.ContainsPoint(t1, hull1, point);
+            }
+
+            public static bool Invoke(RigidTransform t1, NativeHull hull1, float3 point)
+            {
+                return BurstFunction<ContainsPoint, RigidTransform, NativeHull, float3, bool>.Run(Instance, t1, hull1, point);
+            }
+
+            public static ContainsPoint Instance { get; } = new ContainsPoint();
+        }
+
+        [BurstCompile]
+        public struct ClosestPoint : IBurstFunction<RigidTransform, NativeHull, float3, float3>
+        {
+            public float3 Execute(RigidTransform t1, NativeHull hull1, float3 point)
+            {
+                return HullCollision.ClosestPoint(t1, hull1, point);
+            }
+
+            public static float3 Invoke(RigidTransform t1, NativeHull hull1, float3 point)
+            {
+                return BurstFunction<ClosestPoint, RigidTransform, NativeHull, float3, float3>.Run(Instance, t1, hull1, point);
+            }
+
+            public static ClosestPoint Instance { get; } = new ClosestPoint();
         }
 
         [BurstCompile]
@@ -50,7 +84,7 @@ namespace Vella.UnityNativeHull
                         var a = hulls[i];
                         var b = hulls[j];
 
-                        if (NativeCollision.IsCollision(a.Transform, a.Hull, b.Transform, b.Hull))
+                        if (HullCollision.IsCollision(a.Transform, a.Hull, b.Transform, b.Hull))
                         {
                             isCollision = true;
                             results.Add(new BatchCollisionResult
