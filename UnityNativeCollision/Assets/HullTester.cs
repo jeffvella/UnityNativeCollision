@@ -169,9 +169,7 @@ public class HullTester : MonoBehaviour
                         HullDrawingUtility.DrawEdge(point.Id.FeaturePair.OutEdge2, t2, hull2);
 
                         DebugDrawer.DrawDottedLine(point.Position, point.Position - math.normalize(-result.Normal) * point.Distance);
-                    }
-
-                    DebugDrawer.DrawArrow(result.Position, result.Normal * 0.2f);
+                    }              
                     result.Dispose();
                 }
             }
