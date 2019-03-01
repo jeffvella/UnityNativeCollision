@@ -231,7 +231,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 552615060}
   m_LocalRotation: {x: 0.19777073, y: 0.41115877, z: 0.09187158, w: 0.885096}
-  m_LocalPosition: {x: 2.359, y: -0.028, z: -2.248}
+  m_LocalPosition: {x: 2.472, y: 0.207, z: -2.179}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 895030712}
@@ -1483,8 +1483,8 @@ MonoBehaviour:
   DrawIntersection: 0
   DrawClosestFace: 0
   DrawClosestPoint: 0
-  LogCollisions: 0
-  LogClosestPoint: 1
+  LogCollisions: 1
+  LogClosestPoint: 0
 --- !u!4 &895030712
 Transform:
   m_ObjectHideFlags: 0
