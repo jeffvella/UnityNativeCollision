@@ -25,7 +25,11 @@
  * http://www.gamedev.net/topic/667499-3d-sat-problem/ 
  */
 
+using System;
+using System.Linq;
+using Unity.Collections;
 using Unity.Mathematics;
+using UnityEngine;
 using Vella.Common;
 using Debug = UnityEngine.Debug;
 
@@ -257,7 +261,6 @@ namespace Vella.UnityNativeHull
             }
             return closestPlanePoint;
         }
-
     }
 
 }

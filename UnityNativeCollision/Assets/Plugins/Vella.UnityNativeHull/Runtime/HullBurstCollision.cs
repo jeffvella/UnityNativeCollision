@@ -20,7 +20,7 @@ namespace Vella.UnityNativeHull
         public BatchCollisionInput B;
     }
 
-    public static class NativeBurstCollision
+    public static class HullBurstCollision
     {
         [BurstCompile]
         public struct IsCollision : IBurstFunction<RigidTransform, NativeHull, RigidTransform, NativeHull, bool>

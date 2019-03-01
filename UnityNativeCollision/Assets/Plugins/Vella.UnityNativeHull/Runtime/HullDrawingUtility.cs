@@ -49,12 +49,19 @@ namespace Vella.UnityNativeHull
     public class HullDrawingUtility
     {
         public static void DrawBasicHull(NativeHull hull1, RigidTransform t, Color? color = null, int duration = 1)
-        {            
+        {
+            //for (int i = 0; i < hull1.EdgeCount; i++)
+            //{
+            //    var edge = hull1.GetEdge(i);
+            //    var a = math.transform(t, edge.GetOrigin(hull1));
+            //    var b = math.transform(t, edge.GetTwinOrigin(hull1));
+            //    Debug.DrawLine(a, b, color.Value, 1);
+            //}
             foreach (var edge in hull1.GetEdges())
             {
                 var a = math.transform(t, edge.GetOrigin(hull1));
-                var b = math.transform(t, edge.GetTwinOrigin(hull1));                     
-                Debug.DrawLine(a, b, color ?? Color.black, 1);
+                var b = math.transform(t, edge.GetTwinOrigin(hull1));
+                Debug.DrawLine(a, b, color.Value, 1);
             }
         }
 
@@ -158,7 +165,32 @@ namespace Vella.UnityNativeHull
             }
         }
 
-        public static void DrawFaceWithOutline(int faceIndex, RigidTransform t, NativeHull hull, Color fillColor, Color outlineColor)
+        public static void DrawEdge(int i, RigidTransform t1, NativeHull hull1, Color? color = null)
+        {
+            if(i > 0 && i < hull1.EdgeCount-1)
+            {
+                ref var localEdge = ref hull1.GetEdgeRef(i);
+
+                if (localEdge.Origin < 0 || localEdge.Origin >= hull1.VertexCount)
+                {
+                    //Debug.LogError($"Invalid edge vertex Index {localEdge.Origin}");
+                    return;
+                }
+
+                if (localEdge.Twin < 0 || localEdge.Twin >= hull1.VertexCount)
+                {
+                   //Debug.LogError($"Invalid twin vertex Index {localEdge.Twin}");
+                    return;
+                }
+
+                var v1 = math.transform(t1, localEdge.GetOrigin(hull1));
+                var v2 = math.transform(t1, localEdge.GetTwinOrigin(hull1));
+
+                DebugDrawer.DrawLine(v1, v2, color ?? DebugDrawer.DefaultColor);
+            }
+        }
+
+        public static void DrawFaceWithOutline(int faceIndex, RigidTransform t, NativeHull hull, Color fillColor, Color? outlineColor = null)
         {
             var verts = hull.GetVertices(faceIndex).Select(cp => (Vector3)cp).ToArray();
             var tVerts = new List<Vector3>();
@@ -168,7 +200,7 @@ namespace Vella.UnityNativeHull
                 tVerts.Add(v);
                 var nextIndex = i + 1 < verts.Length ? i + 1 : 0;
                 var next = math.transform(t, verts[nextIndex]);
-                Debug.DrawLine(v, next, outlineColor);
+                Debug.DrawLine(v, next, outlineColor ?? fillColor);
             }
             DebugDrawer.DrawAAConvexPolygon(tVerts.ToArray(), fillColor);
         }
