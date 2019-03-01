@@ -231,7 +231,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 552615060}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -3.71, y: 0.5, z: -3.991}
+  m_LocalPosition: {x: 2.742, y: -0.26, z: -1.817}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 895030712}
@@ -916,7 +916,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 843894470}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -4.1, y: 0.13, z: -7.44}
+  m_LocalPosition: {x: -2.266, y: 0.13, z: -2.673}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 895030712}
@@ -1477,13 +1477,13 @@ MonoBehaviour:
   - {fileID: 843894471}
   - {fileID: 552615061}
   - {fileID: 2000962621}
-  - {fileID: 0}
   HullDrawingOptions: 128
-  DrawContact: 0
-  DrawIntersection: 1
+  DrawContact: 1
+  DrawIntersection: 0
   DrawClosestFace: 0
+  DrawClosestPoint: 0
   LogCollisions: 0
-  LogClosestPoint: 0
+  LogClosestPoint: 1
 --- !u!4 &895030712
 Transform:
   m_ObjectHideFlags: 0
@@ -1508,7 +1508,7 @@ Mesh:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: pb_Mesh13954
+  m_Name: pb_Mesh14192
   serializedVersion: 10
   m_SubMeshes:
   - serializedVersion: 2
@@ -1671,7 +1671,7 @@ Mesh:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: pb_Mesh13986
+  m_Name: pb_Mesh14224
   serializedVersion: 10
   m_SubMeshes:
   - serializedVersion: 2
@@ -1834,7 +1834,7 @@ Mesh:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: pb_Mesh13938
+  m_Name: pb_Mesh14176
   serializedVersion: 10
   m_SubMeshes:
   - serializedVersion: 2
@@ -2017,7 +2017,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1684599808}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -4.178, y: 0.627, z: -3.689}
+  m_LocalPosition: {x: 2.09, y: 0, z: -1.6}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 895030712}

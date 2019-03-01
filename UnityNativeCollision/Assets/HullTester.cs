@@ -22,6 +22,7 @@ public class HullTester : MonoBehaviour
     public bool DrawContact;
     public bool DrawIntersection;
     public bool DrawClosestFace;
+    public bool DrawClosestPoint;
 
     [Header("Console Logging")]
     public bool LogCollisions;
@@ -59,8 +60,12 @@ public class HullTester : MonoBehaviour
                 var result4 = HullBurstCollision.ClosestPoint.Invoke(transformA, hullA, 0);
                 sw4.Stop();
 
-                DebugDrawer.DrawSphere(result4, 0.1f, Color.blue);
-                DebugDrawer.DrawLine(result4, Vector3.zero, Color.blue);
+                if (DrawClosestPoint)
+                {
+                    DebugDrawer.DrawSphere(result4, 0.1f, Color.blue);
+                    DebugDrawer.DrawLine(result4, Vector3.zero, Color.blue);
+                }
+
                 Debug.Log($"ClosestPoint between '{tA.name}' and world zero took: {sw3.Elapsed.TotalMilliseconds:N4}ms (Normal), {sw4.Elapsed.TotalMilliseconds:N4}ms (Burst)");
             }
 
@@ -156,7 +161,9 @@ public class HullTester : MonoBehaviour
                         var point = result.Points[i];
                         DebugDrawer.DrawSphere(point.Position, 0.02f);
                         DebugDrawer.DrawArrow(point.Position, result.Normal * 0.2f);
-                        DebugDrawer.DrawLabel(point.Position, $"{point.Distance:N2}");
+
+                        var penentrationPoint = point.Position + math.normalize(result.Normal) * point.Distance;
+                        DebugDrawer.DrawLabel(penentrationPoint, $"{point.Distance:N2}");
 
                         HullDrawingUtility.DrawEdge(point.Id.FeaturePair.InEdge1, t1, hull1);
                         HullDrawingUtility.DrawEdge(point.Id.FeaturePair.OutEdge1, t1, hull1);
@@ -168,7 +175,7 @@ public class HullTester : MonoBehaviour
                         HullDrawingUtility.DrawEdge(point.Id.FeaturePair.InEdge2, t2, hull2);
                         HullDrawingUtility.DrawEdge(point.Id.FeaturePair.OutEdge2, t2, hull2);
 
-                        DebugDrawer.DrawDottedLine(point.Position, point.Position - math.normalize(-result.Normal) * point.Distance);
+                        DebugDrawer.DrawDottedLine(point.Position, penentrationPoint);
                     }              
                     result.Dispose();
                 }
