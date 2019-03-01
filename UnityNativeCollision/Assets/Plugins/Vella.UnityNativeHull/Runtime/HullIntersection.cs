@@ -29,6 +29,7 @@ using Unity.Mathematics;
 using Unity.Collections;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
+using Vella.Common;
 
 namespace Vella.UnityNativeHull
 {
@@ -49,16 +50,14 @@ namespace Vella.UnityNativeHull
 
     public class NativeIntersection
     {
-        public static bool NativeHullHullContact(out NativeManifold output, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
+        public static bool DrawNativeHullHullIntersection(RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
         {
-            output = new NativeManifold(Allocator.Persistent);
-
-            // todo: collect faces and put them in combined manifold
-
             for (int i = 0; i < hull2.FaceCount; i++)
             {
                 var tmp = new NativeManifold(Allocator.Temp);
-                CreateFaceContact2(ref tmp, i, transform2, hull2, transform1, hull1);
+
+                ClipFace(ref tmp, i, transform2, hull2, transform1, hull1);
+
                 HullDrawingUtility.DebugDrawManifold(tmp);
                 tmp.Dispose();
             }
@@ -66,26 +65,23 @@ namespace Vella.UnityNativeHull
             for (int i = 0; i < hull1.FaceCount; i++)
             {
                 var tmp = new NativeManifold(Allocator.Temp);
-                CreateFaceContact2(ref tmp, i, transform1, hull1, transform2, hull2);
+
+                ClipFace(ref tmp, i, transform1, hull1, transform2, hull2);
+
                 HullDrawingUtility.DebugDrawManifold(tmp);
                 tmp.Dispose();
             }
-
             return true;
         }
 
-        public static int CreateFaceContact2(ref NativeManifold output, int referenceFaceIndex, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
+        private static void ClipFace(ref NativeManifold tmp, int i, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
         {
-            // todo, clean this up, i'm reversing the args here so that closest face is the one clipped instead of incident.
-
-            Debug.Assert(output.IsCreated);
-
-            NativePlane referencePlane = transform1 * hull1.GetPlane(referenceFaceIndex);
-            var incidentFaceIndex = ComputeIncidentFaceIndex(referencePlane, transform2, hull2);
-            return CreateFaceContact(ref output, incidentFaceIndex, transform2, hull2, referenceFaceIndex, transform1, hull1);
+            NativePlane plane = transform1 * hull1.GetPlane(i);
+            var incidentFaceIndex = ComputeIncidentFaceIndex(plane, transform2, hull2);
+            ClipFaceAgainstAnother(ref tmp, incidentFaceIndex, transform2, hull2, i, transform1, hull1);
         }
 
-        public static int CreateFaceContact(ref NativeManifold output, int referenceFaceIndex, RigidTransform transform1, NativeHull hull1, int incidentFaceIndex, RigidTransform transform2, NativeHull hull2)
+        public static int ClipFaceAgainstAnother(ref NativeManifold output, int referenceFaceIndex, RigidTransform transform1, NativeHull hull1, int incidentFaceIndex, RigidTransform transform2, NativeHull hull2)
         {
             Debug.Assert(output.IsCreated);
 
@@ -93,6 +89,8 @@ namespace Vella.UnityNativeHull
             NativePlane referencePlane = transform1 * refPlane;
 
             NativeList<ClipPlane> clippingPlanes = new NativeList<ClipPlane>((int)hull1.FaceCount, Allocator.Temp);
+
+            // Get every plane on the other polygon
             GetClippingPlanes(ref clippingPlanes, referencePlane, referenceFaceIndex, transform1, hull1);
 
             // Create face polygon.
@@ -233,6 +231,28 @@ namespace Vella.UnityNativeHull
             }
         }
 
+
+        public static unsafe void GetFaceSidePlanes(ref NativeList<ClipPlane> output, NativePlane facePlane, int faceIndex, RigidTransform transform, NativeHull hull)
+        { 
+            NativeHalfEdge* start = hull.GetEdgePtr(hull.GetFacePtr(faceIndex)->Edge);
+            NativeHalfEdge* current = start;
+	        do
+            {
+                NativeHalfEdge* twin = hull.GetEdgePtr(current->Twin);
+                float3 P = math.transform(transform, hull.GetVertex(current->Origin));
+                float3 Q = math.transform(transform, hull.GetVertex(twin->Origin));
+
+                ClipPlane clipPlane = default;
+                clipPlane.edgeId = twin->Twin; //edge ID.
+		        clipPlane.plane.Normal = math.normalize(math.cross(Q - P, facePlane.Normal));
+		        clipPlane.plane.Offset = math.dot(clipPlane.plane.Normal, P);            
+                output.Add(clipPlane);
+
+		        current = hull.GetEdgePtr(current->Next);
+            }
+            while (current != start);
+        }
+
         /// <summary>
         /// Populates a list with transformed face vertices.
         /// </summary>
@@ -352,6 +372,132 @@ namespace Vella.UnityNativeHull
 
             C1 = P1 + F1 * E1;
             C2 = P2 + F2 * E2;
+        }
+
+
+        public static bool NativeHullHullContact(ref NativeManifold output, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
+        {
+            Debug.Assert(output.IsCreated);
+
+            FaceQueryResult faceQuery1;
+            HullCollision.QueryFaceDistance(out faceQuery1, transform1, hull1, transform2, hull2);
+            if (faceQuery1.Distance > 0)
+            {
+                return false;
+            }
+
+            FaceQueryResult faceQuery2;
+            HullCollision.QueryFaceDistance(out faceQuery2, transform2, hull2, transform1, hull1);
+            if (faceQuery2.Distance > 0)
+            {
+                return false;
+            }
+         
+            HullCollision.QueryEdgeDistance(out EdgeQueryResult edgeQuery, transform1, hull1, transform2, hull2);
+            if (edgeQuery.Distance > 0)
+            {
+                return false;
+            }
+
+            float kRelEdgeTolerance = 0.90f; //90%
+            float kRelFaceTolerance = 0.95f; //95%
+            float kAbsTolerance = 0.5f * 0.005f;
+
+            // Favor face contacts over edge contacts.
+            float maxFaceSeparation = math.max(faceQuery1.Distance, faceQuery2.Distance);
+            if (edgeQuery.Distance > kRelEdgeTolerance * maxFaceSeparation + kAbsTolerance)
+            {
+                b3CreateEdgeContact(ref output, edgeQuery, transform1, hull1, transform2, hull2);
+            }
+            else
+            {
+                // Favor first hull face to avoid face flip-flops. 
+                if (faceQuery2.Distance > kRelFaceTolerance * faceQuery1.Distance + kAbsTolerance)
+                {
+                    // 2 = reference, 1 = incident.
+                    CreateFaceContact(ref output, faceQuery2, transform2, hull2, transform1, hull1, true);
+                }
+                else
+                {
+                    // 1 = reference, 2 = incident.
+                    CreateFaceContact(ref output, faceQuery1, transform1, hull1, transform2, hull2, false);
+                }
+            }
+            return true;
+        }
+
+
+        public static void CreateFaceContact(ref NativeManifold output, FaceQueryResult input, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2, bool flipNormal)
+        {
+            var refPlane = hull1.GetPlane(input.Index);
+            NativePlane referencePlane = transform1 * refPlane;
+
+            NativeList<ClipPlane> clippingPlanes = new NativeList<ClipPlane>((int)hull1.FaceCount, Allocator.Temp);
+            
+            // Find only the side planes of the reference face
+            GetFaceSidePlanes(ref clippingPlanes, referencePlane, input.Index, transform1, hull1);
+ 
+            NativeList<ClipVertex> incidentPolygon = new NativeList<ClipVertex>((int)hull1.VertexCount, Allocator.Temp);
+            var incidentFaceIndex = ComputeIncidentFaceIndex(referencePlane, transform2, hull2);
+
+            ComputeFaceClippingPolygon(ref incidentPolygon, incidentFaceIndex, transform2, hull2);
+
+            //HullDrawingUtility.DrawFaceWithOutline(incidentFaceIndex, transform2, hull2, Color.yellow.ToOpacity(0.3f));
+
+            // Clip face polygon against the clipping planes.
+            for (int i = 0; i < clippingPlanes.Length; ++i)
+            {
+                NativeList<ClipVertex> outputPolygon = new NativeList<ClipVertex>((int)hull1.VertexCount, Allocator.Temp);
+                Clip(clippingPlanes[i], ref incidentPolygon, ref outputPolygon);
+
+                if (outputPolygon.Length == 0)
+                {
+                    return;
+                }
+
+                incidentPolygon.Dispose();
+                incidentPolygon = outputPolygon;
+            }
+
+            // Get all contact points below reference face.
+            for (int i = 0; i < incidentPolygon.Length; ++i)
+            {
+                ClipVertex vertex = incidentPolygon[i];
+                float distance = referencePlane.Distance(vertex.position);
+
+                if (distance <= 0)
+                {
+                    // Below reference plane -> position constraint violated.
+                    ContactID id = default;
+                    id.FeaturePair = vertex.featurePair;                 
+
+                    if (flipNormal)
+                    {
+                        output.Normal = -referencePlane.Normal;
+                        Swap(id.FeaturePair.InEdge1, id.FeaturePair.InEdge2);
+                        Swap(id.FeaturePair.OutEdge1, id.FeaturePair.OutEdge2);
+                    }
+                    else
+                    {
+                        output.Normal = referencePlane.Normal;                        
+                    }
+                    
+                    // Project clipped point onto reference plane.
+                    float3 position = referencePlane.ClosestPoint(vertex.position);
+                    // Add point and distance to the plane to the manifold.
+                    output.Add(position, distance, id);
+                }
+            }
+
+            clippingPlanes.Dispose();
+            incidentPolygon.Dispose();
+        }
+      
+        public static void Swap<T>(T a, T b)
+        {
+            T tmp = a;
+            a = b;
+            b = tmp;
         }
 
     }

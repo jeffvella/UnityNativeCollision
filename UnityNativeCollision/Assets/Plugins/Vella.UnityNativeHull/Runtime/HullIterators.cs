@@ -105,7 +105,11 @@ namespace Vella.UnityNativeHull
 
         public bool MoveNext()
         {
-            if (_offset == -1)
+            if (_edgeIndex >= _hull.EdgeCount-1)
+            {
+                return false;
+            }
+            else if (_offset == -1)
             {
                 _edgeIndex = _currentIndex;
             }
@@ -128,92 +132,5 @@ namespace Vella.UnityNativeHull
 
         public EdgeEnumerator GetEnumerator() => this;
     }
-
-    //public class HullAllEdgesEnumerator : IEnumerator<NativeHalfEdge>, IEnumerable<NativeHalfEdge>
-    //{
-    //    private int _currentIndex = -2;
-    //    private NativeHull _hull;
-
-    //    public HullAllEdgesEnumerator(NativeHull hull)
-    //    {
-    //        _hull = hull;
-    //    }
-
-    //    public bool MoveNext()
-    //    {
-    //        if (_currentIndex + 2 >= _hull.EdgeCount)
-    //            return false;
-
-    //        _currentIndex = _currentIndex + 2;
-    //        return true;
-    //    }
-
-    //    public void Reset()
-    //    {
-    //        _currentIndex = -2;
-    //    }
-
-    //    NativeHalfEdge IEnumerator<NativeHalfEdge>.Current => _hull.GetEdge(_currentIndex);
-    //    public object Current => _hull.GetEdge(_currentIndex);
-    //    public void Dispose() { }
-    //    public IEnumerator<NativeHalfEdge> GetEnumerator() => this;
-    //    IEnumerator IEnumerable.GetEnumerator() => this;
-    //}
-
-    //public class HullFaceEdgesEnumerator : IEnumerator<NativeHalfEdge>, IEnumerable<NativeHalfEdge>
-    //{
-    //    private int _offset;
-    //    private NativeHull _hull;
-    //    private int _edgeIndex;
-
-    //    private int _currentIndex = -1;
-
-    //    public HullFaceEdgesEnumerator(NativeHull hull, int faceIndex)
-    //    {
-    //        _hull = hull;
-    //        _offset = hull.GetFace(faceIndex).Edge;
-    //    }
-
-    //    public bool MoveNext()
-    //    {
-    //        if (_currentIndex == -1)
-    //        {
-    //            _edgeIndex = _offset;
-    //        }
-    //        else
-    //        {
-    //            ref var edge = ref _hull.GetEdgeRef(_edgeIndex);
-    //            if (edge.Next == _offset)
-    //            {
-    //                return false;
-    //            }
-    //            _edgeIndex = edge.Next;
-    //        }
-    //        _currentIndex++;
-    //        return true;
-    //    }
-
-    //    public void Reset()
-    //    {
-    //        _currentIndex = -1;
-    //    }
-
-    //    NativeHalfEdge IEnumerator<NativeHalfEdge>.Current
-    //    {
-    //        get
-    //        {
-
-    //            return _hull.GetEdge(_edgeIndex);
-    //        }
-    //    }
-
-    //    public object Current => _hull.GetEdge(_edgeIndex);
-
-    //    public void Dispose() { }
-    //    public IEnumerator<NativeHalfEdge> GetEnumerator() => this;
-
-    //    IEnumerator IEnumerable.GetEnumerator() => this;
-    //}
-
 
 }

@@ -112,6 +112,30 @@ namespace Vella.Common
         }
 
         /// <summary>
+        /// Draw a debug dotted line.
+        /// </summary>
+        /// <param name="start">start position in world space</param>
+        /// <param name="end">end position in world space</param>
+        /// <param name="color">color of the line</param>
+        /// <param name="GapSize">The space between dots in pixels</param>
+        [Conditional("UNITY_EDITOR")]
+        public static void DrawDottedLine(Vector3 start, Vector3 end, Color? color = null, float GapSize = default)
+        {
+            if(GapSize == default)
+            {
+                GapSize = Vector3.Distance(Camera.main.transform.position, start);
+            }
+
+            Draw(new DottedLineDrawing
+            {
+                Color = color ?? DefaultColor,
+                Start = start,
+                End = end,
+                GapSize = GapSize,
+            });
+        }
+
+        /// <summary>
         /// Draw a solid outlined rectangle in 3D space.
         /// </summary>
         /// <param name="verts">The screen coodinates rectangle.</param>
@@ -369,6 +393,26 @@ namespace Vella.Common
 #if UNITY_EDITOR
             Handles.color = Color;
             Handles.DrawAAConvexPolygon(Verts);
+#endif
+        }
+    }
+
+    public struct DottedLineDrawing : IDebugDrawing
+    {
+        public Color Color;
+        public Vector3 Start;
+        public Vector3 End;
+
+        /// <summary>
+        /// The spacing between the dots in pixels.
+        /// </summary>
+        public float GapSize;
+
+        public void Draw()
+        {
+#if UNITY_EDITOR
+            Handles.color = Color;
+            Handles.DrawDottedLine(Start,End, GapSize);
 #endif
         }
     }

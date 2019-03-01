@@ -18,6 +18,7 @@ namespace Vella.UnityNativeHull
         public float3 Normal; //A -> B.
 
         public NativeList<ContactPoint> Points;
+
         public bool IsCreated => Points.IsCreated;
 
         public void Add(ContactPoint cp)
