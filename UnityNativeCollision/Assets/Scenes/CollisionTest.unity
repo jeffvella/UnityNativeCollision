@@ -230,13 +230,13 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 552615060}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 2.742, y: -0.26, z: -1.817}
+  m_LocalRotation: {x: 0.19777073, y: 0.41115877, z: 0.09187158, w: 0.885096}
+  m_LocalPosition: {x: 2.359, y: -0.028, z: -2.248}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 895030712}
   m_RootOrder: 0
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 15.935, y: 52.628002, z: 19.771002}
 --- !u!114 &552615062
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1478,6 +1478,7 @@ MonoBehaviour:
   - {fileID: 552615061}
   - {fileID: 2000962621}
   HullDrawingOptions: 128
+  DrawIsCollided: 0
   DrawContact: 1
   DrawIntersection: 0
   DrawClosestFace: 0
@@ -2017,7 +2018,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1684599808}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 2.09, y: 0, z: -1.6}
+  m_LocalPosition: {x: 2.383, y: 0.357, z: -1.628}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 895030712}

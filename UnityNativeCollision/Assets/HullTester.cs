@@ -19,6 +19,7 @@ public class HullTester : MonoBehaviour
     public DebugHullFlags HullDrawingOptions = DebugHullFlags.Outline;
 
     [Header("Visualizations")]
+    public bool DrawIsCollided;
     public bool DrawContact;
     public bool DrawIntersection;
     public bool DrawClosestFace;
@@ -181,18 +182,11 @@ public class HullTester : MonoBehaviour
                 }
             }
 
-
-
-
-            //if (NativeIntersection.NativeHullHullContact(out NativeManifold result, t1, hull1, t2, hull2))
-            //{
-            //    // Do something with manifold
-
-            //    result.Dispose();
-            //}
-
-            DebugDrawer.DrawSphere(t1.pos, 0.1f, UnityColors.GhostDodgerBlue);
-            DebugDrawer.DrawSphere(t2.pos, 0.1f, UnityColors.GhostDodgerBlue);
+            if(DrawIsCollided)
+            {
+                DebugDrawer.DrawSphere(t1.pos, 0.1f, UnityColors.GhostDodgerBlue);
+                DebugDrawer.DrawSphere(t2.pos, 0.1f, UnityColors.GhostDodgerBlue);
+            }
         }
 
         if(DrawClosestFace)
