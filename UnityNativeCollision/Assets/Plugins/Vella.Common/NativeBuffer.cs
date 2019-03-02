@@ -42,7 +42,7 @@ namespace Vella.Common
 
         public void Clear() => NativeBuffer.Clear<T>(_buffer);
 
-        public T[] ToArray() => _buffer.ToArray<T>();
+        public T[] ToArray() => _buffer.ToArray<T>(Length);
 
         public void Dispose() => _buffer.Dispose();
 

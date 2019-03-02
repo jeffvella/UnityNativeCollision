@@ -1483,8 +1483,9 @@ MonoBehaviour:
   DrawIntersection: 0
   DrawClosestFace: 0
   DrawClosestPoint: 0
-  LogCollisions: 1
+  LogCollisions: 0
   LogClosestPoint: 0
+  LogContact: 1
 --- !u!4 &895030712
 Transform:
   m_ObjectHideFlags: 0
@@ -1509,7 +1510,7 @@ Mesh:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: pb_Mesh13176
+  m_Name: pb_Mesh13512
   serializedVersion: 10
   m_SubMeshes:
   - serializedVersion: 2
@@ -1672,7 +1673,7 @@ Mesh:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: pb_Mesh13208
+  m_Name: pb_Mesh13544
   serializedVersion: 10
   m_SubMeshes:
   - serializedVersion: 2
@@ -1835,7 +1836,7 @@ Mesh:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: pb_Mesh13160
+  m_Name: pb_Mesh13496
   serializedVersion: 10
   m_SubMeshes:
   - serializedVersion: 2
