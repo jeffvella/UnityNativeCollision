@@ -13,7 +13,8 @@ using UnityEngine.Internal;
 namespace Vella.Common
 {
     /// <summary>
-    /// NativeBuffer<T> is an alternative to NativeList<T>, which currently has issues being instantiated within a burst job.
+    /// NativeBuffer<T> is an alternative to NativeList<T>. 
+    /// (NativeList<T> currently has issues being instantiated within a burst job)
     /// </summary>
     [NativeContainer]
     [DebuggerDisplay("Length = {Length}")]
