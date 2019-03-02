@@ -125,7 +125,7 @@ public class HullValidation
             return;
         }
 
-        var twin = edge.GetTwin(hull);
+        var twin = hull.GetEdge(edge.Twin);
 
         Debug.Assert(edgeIndex == twin.Twin,
             "The twin of the edge twin must be the edge itself");

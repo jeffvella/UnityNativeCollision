@@ -50,17 +50,10 @@ namespace Vella.UnityNativeHull
     {
         public static void DrawBasicHull(NativeHull hull1, RigidTransform t, Color? color = null, int duration = 1)
         {
-            //for (int i = 0; i < hull1.EdgeCount; i++)
-            //{
-            //    var edge = hull1.GetEdge(i);
-            //    var a = math.transform(t, edge.GetOrigin(hull1));
-            //    var b = math.transform(t, edge.GetTwinOrigin(hull1));
-            //    Debug.DrawLine(a, b, color.Value, 1);
-            //}
             foreach (var edge in hull1.GetEdges())
             {
-                var a = math.transform(t, edge.GetOrigin(hull1));
-                var b = math.transform(t, edge.GetTwinOrigin(hull1));
+                var a = math.transform(t, hull1.GetVertex(edge.Origin));
+                var b = math.transform(t, hull1.GetVertex(edge.Twin));
                 Debug.DrawLine(a, b, color.Value, 1);
             }
         }
@@ -108,7 +101,7 @@ namespace Vella.UnityNativeHull
             {
                 for (int i = 0; i < hull.FaceCount; i++)
                 {
-                    var centroid = math.transform(t, hull.GetFace(i).CalculateFaceCentroid(hull));
+                    var centroid = math.transform(t, hull.CalculateFaceCentroid(hull.GetFace(i)));
                     var normal = math.rotate(t, hull.GetPlane(i).Normal);
                     DebugDrawer.DrawArrow(centroid, normal * 0.2f, BaseColor);  
                 }
@@ -183,8 +176,8 @@ namespace Vella.UnityNativeHull
                     return;
                 }
 
-                var v1 = math.transform(t1, localEdge.GetOrigin(hull1));
-                var v2 = math.transform(t1, localEdge.GetTwinOrigin(hull1));
+                var v1 = math.transform(t1, hull1.GetVertex(localEdge.Origin));
+                var v2 = math.transform(t1, hull1.GetVertex(localEdge.Twin));
 
                 DebugDrawer.DrawLine(v1, v2, color ?? DebugDrawer.DefaultColor);
             }
@@ -207,23 +200,23 @@ namespace Vella.UnityNativeHull
 
         public static void DebugDrawManifold(NativeManifold manifold, Color color = default)
         {
-            if (!manifold.IsCreated || manifold.Points.Length == 0)
+            if (!manifold.IsCreated || manifold.Length == 0)
                 return;
 
             if (color == default)
                 color = UnityColors.Blue.ToOpacity(0.3f);
 
-            for (int i = 0; i < manifold.Points.Length; i++)
+            for (int i = 0; i < manifold.Length; i++)
             {
-                var start = manifold.Points[i];
-                if (manifold.Points.Length >= 2)
+                var start = manifold[i];
+                if (manifold.Length >= 2)
                 {
-                    var end = i > 0 ? manifold.Points[i - 1] : manifold.Points[manifold.Points.Length - 1];
+                    var end = i > 0 ? manifold[i - 1] : manifold[manifold.Length - 1];
                     Debug.DrawLine(start.Position, end.Position, color);                    
                 }
                 DebugDrawer.DrawSphere(start.Position, 0.02f, color.ToOpacity(0.8f));
             }
-            DebugDrawer.DrawAAConvexPolygon(manifold.Points.ToArray().Select(cp => (Vector3)cp.Position).ToArray(), color);
+            DebugDrawer.DrawAAConvexPolygon(manifold.ToArray().Select(cp => (Vector3)cp.Position).ToArray(), color);
         }
 
     }

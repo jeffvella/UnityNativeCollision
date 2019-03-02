@@ -23,8 +23,8 @@ public class BoxCollision
             var insideUnitRange = new RigidTransform(float3x3.identity, insideUnitRangePosition);
             var outsideUnitRange = new RigidTransform(float3x3.identity, outsideUnitRangePosition);
 
-            Assert.IsTrue(HullCollision.IsCollision(insideUnitRange, box, RigidTransform.identity, box));
-            Assert.IsFalse(HullCollision.IsCollision(outsideUnitRange, box, RigidTransform.identity, box));
+            Assert.IsTrue(HullCollision.IsColliding(insideUnitRange, box, RigidTransform.identity, box));
+            Assert.IsFalse(HullCollision.IsColliding(outsideUnitRange, box, RigidTransform.identity, box));
         }
     }
 
@@ -36,40 +36,40 @@ public class BoxCollision
             var testTransform = new RigidTransform();
 
             testTransform.pos = Vector3.down * 0.99f;
-            Assert.IsTrue(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsTrue(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.down * 1.01f;
-            Assert.IsFalse(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsFalse(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.up * 0.99f;
-            Assert.IsTrue(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsTrue(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.up * 1.01f;
-            Assert.IsFalse(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsFalse(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.back * 0.99f;
-            Assert.IsTrue(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsTrue(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.back * 1.01f;
-            Assert.IsFalse(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsFalse(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.forward * 0.99f;
-            Assert.IsTrue(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsTrue(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.forward * 1.01f;
-            Assert.IsFalse(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsFalse(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.right * 0.99f;
-            Assert.IsTrue(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsTrue(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.right * 1.01f;
-            Assert.IsFalse(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsFalse(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.left * 0.99f;
-            Assert.IsTrue(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsTrue(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
 
             testTransform.pos = Vector3.left * 1.01f;
-            Assert.IsFalse(HullCollision.IsCollision(testTransform, box, RigidTransform.identity, box));
+            Assert.IsFalse(HullCollision.IsColliding(testTransform, box, RigidTransform.identity, box));
         }
     }
 
@@ -86,8 +86,8 @@ public class BoxCollision
             var insideUnitBox = new RigidTransform(rotateEveryAxis45, new float3(0.2f, 1.34f, 0.1f));
             var outsideUnitBox = new RigidTransform(rotateEveryAxis45, new float3(0.2f, 1.38f, 0.1f));
 
-            Assert.IsTrue(HullCollision.IsCollision(insideUnitBox, box, RigidTransform.identity, box));
-            Assert.IsFalse(HullCollision.IsCollision(outsideUnitBox, box, RigidTransform.identity, box));
+            Assert.IsTrue(HullCollision.IsColliding(insideUnitBox, box, RigidTransform.identity, box));
+            Assert.IsFalse(HullCollision.IsColliding(outsideUnitBox, box, RigidTransform.identity, box));
 
             HullDrawingUtility.DrawBasicHull(box, insideUnitBox, Color.blue, 100);
             HullDrawingUtility.DrawBasicHull(box, outsideUnitBox, Color.black, 100);
@@ -96,8 +96,8 @@ public class BoxCollision
             insideUnitBox = new RigidTransform(rotateEveryAxis45, new float3(0.2f, -1.34f, 0.1f));
             outsideUnitBox = new RigidTransform(rotateEveryAxis45, new float3(0.2f, -1.38f, 0.1f));
 
-            Assert.IsTrue(HullCollision.IsCollision(insideUnitBox, box, RigidTransform.identity, box));
-            Assert.IsFalse(HullCollision.IsCollision(outsideUnitBox, box, RigidTransform.identity, box));
+            Assert.IsTrue(HullCollision.IsColliding(insideUnitBox, box, RigidTransform.identity, box));
+            Assert.IsFalse(HullCollision.IsColliding(outsideUnitBox, box, RigidTransform.identity, box));
 
             HullDrawingUtility.DrawBasicHull(box, insideUnitBox, Color.blue, 100);
             HullDrawingUtility.DrawBasicHull(box, outsideUnitBox, Color.black, 100);
@@ -115,8 +115,8 @@ public class BoxCollision
             var insideUnitBox = new RigidTransform(rotateEveryAxis45, new float3(0.2f, 1.1f, -0.80f));
             var outsideUnitBox = new RigidTransform(rotateEveryAxis45, new float3(0.184f, 1.123f, -0.816f));
 
-            Assert.IsTrue(HullCollision.IsCollision(insideUnitBox, box, RigidTransform.identity, box));            
-            Assert.IsFalse(HullCollision.IsCollision(outsideUnitBox, box, RigidTransform.identity, box));
+            Assert.IsTrue(HullCollision.IsColliding(insideUnitBox, box, RigidTransform.identity, box));            
+            Assert.IsFalse(HullCollision.IsColliding(outsideUnitBox, box, RigidTransform.identity, box));
 
             HullDrawingUtility.DrawBasicHull(box, insideUnitBox, Color.blue, 100);
             HullDrawingUtility.DrawBasicHull(box, outsideUnitBox, Color.black, 100);
@@ -135,7 +135,7 @@ public class BoxCollision
             var boxTransformA = new RigidTransform(Quaternion.Euler(-24.357f, -4.779f, -32.115f), new float3(-0.089f, -0.821f, -2.233f));
             var boxTransformB = new RigidTransform(Quaternion.Euler(55.943f, 21.207f, 47.057f), new float3(-0.207f, -0.06f, -1.256f));
 
-            Assert.IsFalse(HullCollision.IsCollision(boxTransformA, box, boxTransformB, box));
+            Assert.IsFalse(HullCollision.IsColliding(boxTransformA, box, boxTransformB, box));
 
             HullDrawingUtility.DrawBasicHull(box, boxTransformA, Color.blue, 100);
             HullDrawingUtility.DrawBasicHull(box, boxTransformB, Color.black, 100);

@@ -15,6 +15,7 @@ namespace Vella.Common
             return ref ((T*)NativeArrayUnsafeUtility.GetUnsafeBufferPointerWithoutChecks(arr))[index];
         }
 
+
         public static T[] ToArray<T>(this NativeArray<T> arr, int length) where T : unmanaged
         {
             var dst = new T[length];

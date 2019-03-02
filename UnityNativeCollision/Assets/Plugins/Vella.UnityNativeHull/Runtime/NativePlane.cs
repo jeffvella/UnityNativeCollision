@@ -5,10 +5,17 @@ using static Unity.Mathematics.math;
 
 namespace Vella.UnityNativeHull
 {
-    [DebuggerDisplay("Plane: {Normal}, {Offset}")]
+    [DebuggerDisplay("NativePlane: {Normal}, {Offset}")]
     public unsafe struct NativePlane
     {
+        /// <summary>
+        /// Direction of the plane from hull origin
+        /// </summary>
         public float3 Normal;
+        
+        /// <summary>
+        /// Distance of the plane from hull origin.
+        /// </summary>
         public float Offset;
 
         public float3 Position => Normal * Offset;
@@ -72,7 +79,7 @@ namespace Vella.UnityNativeHull
             return distanceToPoint1 > 0.0 && distanceToPoint2 > 0.0 || distanceToPoint1 <= 0.0 && distanceToPoint2 <= 0.0;
         }
 
-        public bool Raycast(UnityEngine.Ray ray, out float enter)
+        public bool Raycast(Ray ray, out float enter)
         {
             float a = dot(ray.direction, Normal);
             float num = -dot(ray.origin, Normal) - Offset;

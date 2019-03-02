@@ -28,6 +28,7 @@ public class HullTester : MonoBehaviour
     [Header("Console Logging")]
     public bool LogCollisions;
     public bool LogClosestPoint;
+    public bool LogContact;
 
     private Dictionary<int, (Transform Transform, NativeHull Hull)> Hulls;
 
@@ -58,7 +59,7 @@ public class HullTester : MonoBehaviour
                 sw3.Stop();
 
                 var sw4 = System.Diagnostics.Stopwatch.StartNew();
-                var result4 = HullBurstCollision.ClosestPoint.Invoke(transformA, hullA, 0);
+                var result4 = HullOperations.ClosestPoint.Invoke(transformA, hullA, 0);
                 sw4.Stop();
 
                 if (DrawClosestPoint)
@@ -83,16 +84,16 @@ public class HullTester : MonoBehaviour
                 var transformB = new RigidTransform(tB.rotation, tB.position);
                 HullDrawingUtility.DrawDebugHull(hullB, transformB, HullDrawingOptions);
 
-                DrawHullCollision(transformA, hullA, transformB, hullB);
+                DrawHullCollision(tA.gameObject, tB.gameObject, transformA, hullA, transformB, hullB);
 
                 if (LogCollisions)
                 {
                     var sw1 = System.Diagnostics.Stopwatch.StartNew();
-                    var result1 = HullCollision.IsCollision(transformA, hullA, transformB, hullB);
+                    var result1 = HullCollision.IsColliding(transformA, hullA, transformB, hullB);
                     sw1.Stop();
 
                     var sw2 = System.Diagnostics.Stopwatch.StartNew();
-                    var result2 = HullBurstCollision.IsCollision.Invoke(transformA, hullA, transformB, hullB);
+                    var result2 = HullOperations.IsColliding.Invoke(transformA, hullA, transformB, hullB);
                     sw2.Stop();
 
                     Debug.Assert(result1 == result2);
@@ -122,7 +123,7 @@ public class HullTester : MonoBehaviour
         using (var results = new NativeList<BatchCollisionResult>(batchInput.Length, Allocator.TempJob))
         {
             var sw3 = System.Diagnostics.Stopwatch.StartNew();
-            var collisions = HullBurstCollision.CollisionBatch.Invoke(hulls, results);
+            var collisions = HullOperations.CollisionBatch.Invoke(hulls, results);
             sw3.Stop();
 
             Debug.Log($"Batch Collisions took {sw3.Elapsed.TotalMilliseconds:N4}ms ({results.Length} collisions from {hulls.Length} hulls)");
@@ -137,7 +138,7 @@ public class HullTester : MonoBehaviour
         }
     }
 
-    public void DrawHullCollision(RigidTransform t1, NativeHull hull1, RigidTransform t2, NativeHull hull2)
+    public void DrawHullCollision(GameObject a, GameObject b, RigidTransform t1, NativeHull hull1, RigidTransform t2, NativeHull hull2)
     {
 
         var collision = HullCollision.GetDebugCollisionInfo(t1, hull1, t2, hull2);
@@ -145,25 +146,43 @@ public class HullTester : MonoBehaviour
         {
             if (DrawIntersection) // Visualize all faces of the intersection
             {
-                NativeIntersection.DrawNativeHullHullIntersection(t1, hull1, t2, hull2);              
+                HullIntersection.DrawNativeHullHullIntersection(t1, hull1, t2, hull2);              
             }
 
             if (DrawContact)  // Visualize the minimal contact calcluation for physics
             {
-                var result = new NativeManifold(Allocator.Persistent);
-                if (NativeIntersection.NativeHullHullContact(ref result, t1, hull1, t2, hull2))
+                //var manifold = HullOperations.GetContact.Invoke(t1, hull1, t2, hull2);
+                
+                var sw1 = System.Diagnostics.Stopwatch.StartNew();
+                var tmp = new NativeManifold(Allocator.Persistent);
+                var normalResult = HullIntersection.NativeHullHullContact(ref tmp, t1, hull1, t2, hull2);
+                sw1.Stop();
+                tmp.Dispose();
+
+                var sw2 = System.Diagnostics.Stopwatch.StartNew();
+                var burstResult = HullOperations.TryGetContact.Invoke(out NativeManifold manifold, t1, hull1, t2, hull2);
+                sw2.Stop();
+
+                if(LogContact)
+                {
+                    Debug.Log($"GetContact between '{a.name}'/'{b.name}' took: {sw1.Elapsed.TotalMilliseconds:N4}ms (Normal), {sw2.Elapsed.TotalMilliseconds:N4}ms (Burst)");
+                }
+
+                if (burstResult)
                 {
                     // Do something with manifold
 
-                    HullDrawingUtility.DebugDrawManifold(result);
+                    HullDrawingUtility.DebugDrawManifold(manifold);
 
-                    for (int i = 0; i < result.Points.Length; i++)
+                    //var points = manifold.Points;
+
+                    for (int i = 0; i < manifold.Length; i++)
                     {
-                        var point = result.Points[i];
+                        var point = manifold[i];
                         DebugDrawer.DrawSphere(point.Position, 0.02f);
-                        DebugDrawer.DrawArrow(point.Position, result.Normal * 0.2f);
+                        DebugDrawer.DrawArrow(point.Position, manifold.Normal * 0.2f);
 
-                        var penentrationPoint = point.Position + math.normalize(result.Normal) * point.Distance;
+                        var penentrationPoint = point.Position + manifold.Normal * point.Distance;
                         DebugDrawer.DrawLabel(penentrationPoint, $"{point.Distance:N2}");
 
                         HullDrawingUtility.DrawEdge(point.Id.FeaturePair.InEdge1, t1, hull1);
@@ -177,9 +196,11 @@ public class HullTester : MonoBehaviour
                         HullDrawingUtility.DrawEdge(point.Id.FeaturePair.OutEdge2, t2, hull2);
 
                         DebugDrawer.DrawDottedLine(point.Position, penentrationPoint);
-                    }              
-                    result.Dispose();
+                    }
+
+                    manifold.Dispose();
                 }
+                
             }
 
             if(DrawIsCollided)

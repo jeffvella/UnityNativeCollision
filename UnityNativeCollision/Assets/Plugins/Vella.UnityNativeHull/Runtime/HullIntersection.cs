@@ -48,7 +48,7 @@ namespace Vella.UnityNativeHull
         public int edgeId;
     };
 
-    public class NativeIntersection
+    public class HullIntersection
     {
         public static bool DrawNativeHullHullIntersection(RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
         {
@@ -88,19 +88,19 @@ namespace Vella.UnityNativeHull
             var refPlane = hull1.GetPlane(referenceFaceIndex);
             NativePlane referencePlane = transform1 * refPlane;
 
-            NativeList<ClipPlane> clippingPlanes = new NativeList<ClipPlane>((int)hull1.FaceCount, Allocator.Temp);
+            NativeBuffer<ClipPlane> clippingPlanes = new NativeBuffer<ClipPlane>(hull1.FaceCount, Allocator.Temp);
 
             // Get every plane on the other polygon
             GetClippingPlanes(ref clippingPlanes, referencePlane, referenceFaceIndex, transform1, hull1);
 
             // Create face polygon.
-            NativeList<ClipVertex> incidentPolygon = new NativeList<ClipVertex>((int)hull1.VertexCount, Allocator.Temp);
+            NativeBuffer<ClipVertex> incidentPolygon = new NativeBuffer<ClipVertex>(hull1.VertexCount, Allocator.Temp);
             ComputeFaceClippingPolygon(ref incidentPolygon, incidentFaceIndex, transform2, hull2);
 
             // Clip face polygon against the clipping planes.
             for (int i = 0; i < clippingPlanes.Length; ++i)
-            {    
-                NativeList<ClipVertex> outputPolygon = new NativeList<ClipVertex>((int)hull1.VertexCount, Allocator.Temp);
+            {
+                NativeBuffer<ClipVertex> outputPolygon = new NativeBuffer<ClipVertex>(hull1.VertexCount, Allocator.Temp);
                 Clip(clippingPlanes[i], ref incidentPolygon, ref outputPolygon);
 
                 if (outputPolygon.Length == 0)
@@ -128,7 +128,7 @@ namespace Vella.UnityNativeHull
         /// <summary>
         /// Perform the Sutherland-Hodgman polygon clipping. Since all side planes are pointing outwards the points that are *behind* the plane are kept.       
         /// </summary>
-        public static void Clip(ClipPlane clipPlane, ref NativeList<ClipVertex> input, ref NativeList<ClipVertex> output)
+        public static void Clip(ClipPlane clipPlane, ref NativeBuffer<ClipVertex> input, ref NativeBuffer<ClipVertex> output)
         {
             //Debug.Assert(output.IsCreated && output.Length == 0);
             Debug.Assert(input.IsCreated && input.Length != 0);
@@ -190,8 +190,6 @@ namespace Vella.UnityNativeHull
             }
         }
 
-
-
         /// <summary>
         /// Finds the index to the least parallel face on the other hull.
         /// </summary>
@@ -218,9 +216,10 @@ namespace Vella.UnityNativeHull
         /// <summary>
         /// Populates a list with transformed face planes 
         /// </summary>
-        public static unsafe void GetClippingPlanes(ref NativeList<ClipPlane> output, NativePlane facePlane, int faceIndex, RigidTransform transform, NativeHull hull)
+        public static unsafe void GetClippingPlanes(ref NativeBuffer<ClipPlane> output, NativePlane facePlane, int faceIndex, RigidTransform transform, NativeHull hull)
         {
             Debug.Assert(output.IsCreated);
+
             for (int i = 0; i < hull.FaceCount; i++)
             {
                 var p = hull.GetPlane(i);
@@ -232,7 +231,7 @@ namespace Vella.UnityNativeHull
         }
 
 
-        public static unsafe void GetFaceSidePlanes(ref NativeList<ClipPlane> output, NativePlane facePlane, int faceIndex, RigidTransform transform, NativeHull hull)
+        public static unsafe void GetFaceSidePlanes(ref NativeBuffer<ClipPlane> output, NativePlane facePlane, int faceIndex, RigidTransform transform, NativeHull hull)
         { 
             NativeHalfEdge* start = hull.GetEdgePtr(hull.GetFacePtr(faceIndex)->Edge);
             NativeHalfEdge* current = start;
@@ -256,7 +255,7 @@ namespace Vella.UnityNativeHull
         /// <summary>
         /// Populates a list with transformed face vertices.
         /// </summary>
-        public static unsafe void ComputeFaceClippingPolygon(ref NativeList<ClipVertex> output, int faceIndex, RigidTransform t, NativeHull hull)
+        public static unsafe void ComputeFaceClippingPolygon(ref NativeBuffer<ClipVertex> output, int faceIndex, RigidTransform t, NativeHull hull)
         {
             Debug.Assert(output.IsCreated);
 
@@ -287,7 +286,7 @@ namespace Vella.UnityNativeHull
             } while (current != start);
         }
 
-        public static unsafe void b3CreateEdgeContact(ref NativeManifold output, EdgeQueryResult input, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
+        public static unsafe void CreateEdgeContact(ref NativeManifold output, EdgeQueryResult input, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
         {
             Debug.Assert(output.IsCreated);
 
@@ -317,21 +316,21 @@ namespace Vella.UnityNativeHull
             {
                 // Flip
                 output.Normal = -normal;
-                cp.Id.FeaturePair.InEdge1 = (sbyte)input.Index2;
-                cp.Id.FeaturePair.OutEdge1 = (sbyte)(input.Index2 + 1);
+                cp.Id.FeaturePair.InEdge1 = input.Index2;
+                cp.Id.FeaturePair.OutEdge1 = input.Index2 + 1;
 
-                cp.Id.FeaturePair.InEdge2 = (sbyte)(input.Index1 + 1);
-                cp.Id.FeaturePair.OutEdge2 = (sbyte)input.Index1;
+                cp.Id.FeaturePair.InEdge2 = input.Index1 + 1;
+                cp.Id.FeaturePair.OutEdge2 = input.Index1;
             }
             else
             {
                 output.Normal = normal;
 
-                cp.Id.FeaturePair.InEdge1 = (sbyte)input.Index1;
-                cp.Id.FeaturePair.OutEdge1 = (sbyte)(input.Index1 + 1);
+                cp.Id.FeaturePair.InEdge1 = input.Index1;
+                cp.Id.FeaturePair.OutEdge1 = input.Index1 + 1;
 
-                cp.Id.FeaturePair.InEdge2 = (sbyte)(input.Index2 + 1);
-                cp.Id.FeaturePair.OutEdge2 = (sbyte)input.Index2;
+                cp.Id.FeaturePair.InEdge2 = input.Index2 + 1;
+                cp.Id.FeaturePair.OutEdge2 = input.Index2;
             }
 
             // Compute the closest points between the two edges (center point of penetration)
@@ -374,11 +373,8 @@ namespace Vella.UnityNativeHull
             C2 = P2 + F2 * E2;
         }
 
-
-        public static bool NativeHullHullContact(ref NativeManifold output, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
+        public static bool NativeHullHullContact(ref NativeManifold result, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
         {
-            Debug.Assert(output.IsCreated);
-
             FaceQueryResult faceQuery1;
             HullCollision.QueryFaceDistance(out faceQuery1, transform1, hull1, transform2, hull2);
             if (faceQuery1.Distance > 0)
@@ -407,7 +403,7 @@ namespace Vella.UnityNativeHull
             float maxFaceSeparation = math.max(faceQuery1.Distance, faceQuery2.Distance);
             if (edgeQuery.Distance > kRelEdgeTolerance * maxFaceSeparation + kAbsTolerance)
             {
-                b3CreateEdgeContact(ref output, edgeQuery, transform1, hull1, transform2, hull2);
+                CreateEdgeContact(ref result, edgeQuery, transform1, hull1, transform2, hull2);
             }
             else
             {
@@ -415,14 +411,15 @@ namespace Vella.UnityNativeHull
                 if (faceQuery2.Distance > kRelFaceTolerance * faceQuery1.Distance + kAbsTolerance)
                 {
                     // 2 = reference, 1 = incident.
-                    CreateFaceContact(ref output, faceQuery2, transform2, hull2, transform1, hull1, true);
+                    CreateFaceContact(ref result, faceQuery2, transform2, hull2, transform1, hull1, true);
                 }
                 else
                 {
                     // 1 = reference, 2 = incident.
-                    CreateFaceContact(ref output, faceQuery1, transform1, hull1, transform2, hull2, false);
+                    CreateFaceContact(ref result, faceQuery1, transform1, hull1, transform2, hull2, false);
                 }
             }
+
             return true;
         }
 
@@ -432,14 +429,24 @@ namespace Vella.UnityNativeHull
             var refPlane = hull1.GetPlane(input.Index);
             NativePlane referencePlane = transform1 * refPlane;
 
-            NativeList<ClipPlane> clippingPlanes = new NativeList<ClipPlane>((int)hull1.FaceCount, Allocator.Temp);
-            
+            var clippingPlanes = new NativeBuffer<ClipPlane>(hull1.FaceCount, Allocator.Temp);
+
+            //NativeList<ClipPlane> clippingPlanes = new NativeList<ClipPlane>((int)hull1.FaceCount, Allocator.Temp);
+
+
+
             // Find only the side planes of the reference face
             GetFaceSidePlanes(ref clippingPlanes, referencePlane, input.Index, transform1, hull1);
- 
-            NativeList<ClipVertex> incidentPolygon = new NativeList<ClipVertex>((int)hull1.VertexCount, Allocator.Temp);
-            var incidentFaceIndex = ComputeIncidentFaceIndex(referencePlane, transform2, hull2);
 
+            var z = 0;
+            foreach (var item in clippingPlanes)
+            {
+                z += item.edgeId;
+            }
+            var test = z;
+
+            var incidentPolygon = new NativeBuffer<ClipVertex>(hull1.VertexCount, Allocator.Temp);
+            var incidentFaceIndex = ComputeIncidentFaceIndex(referencePlane, transform2, hull2);
             ComputeFaceClippingPolygon(ref incidentPolygon, incidentFaceIndex, transform2, hull2);
 
             //HullDrawingUtility.DrawFaceWithOutline(incidentFaceIndex, transform2, hull2, Color.yellow.ToOpacity(0.3f));
@@ -447,7 +454,7 @@ namespace Vella.UnityNativeHull
             // Clip face polygon against the clipping planes.
             for (int i = 0; i < clippingPlanes.Length; ++i)
             {
-                NativeList<ClipVertex> outputPolygon = new NativeList<ClipVertex>((int)hull1.VertexCount, Allocator.Temp);
+                var outputPolygon = new NativeBuffer<ClipVertex>(hull1.VertexCount, Allocator.Temp);
                 Clip(clippingPlanes[i], ref incidentPolygon, ref outputPolygon);
 
                 if (outputPolygon.Length == 0)

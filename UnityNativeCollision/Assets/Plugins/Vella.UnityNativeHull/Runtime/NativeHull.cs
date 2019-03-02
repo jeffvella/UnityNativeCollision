@@ -136,9 +136,25 @@ namespace Vella.UnityNativeHull
             var result = new List<float3>();
             foreach(var edge in GetEdges(hull, faceIndex))
             {
-                result.Add(edge.GetOrigin(hull));
+                result.Add(hull.GetVertex(edge.Origin));
             }
             return result;
+        }
+
+        public static float3 CalculateFaceCentroid(this NativeHull hull, NativeFace face)
+        {
+            float3 centroid = 0;
+            int edgeCount = 0;
+            ref NativeHalfEdge start = ref hull.GetEdgeRef(face.Edge);
+            ref NativeHalfEdge current = ref start;
+            do
+            {
+                edgeCount++;
+                centroid += hull.GetVertex(current.Origin);
+                current = ref hull.GetEdgeRef(current.Next);
+            }
+            while (current.Origin != start.Origin);
+            return centroid / edgeCount;
         }
 
     }

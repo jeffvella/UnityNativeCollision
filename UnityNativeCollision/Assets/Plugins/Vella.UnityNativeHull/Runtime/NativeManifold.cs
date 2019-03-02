@@ -2,33 +2,39 @@
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Mathematics;
+using Vella.Common;
 
 namespace Vella.UnityNativeHull
 {
+
+
     public unsafe struct NativeManifold : IDisposable
     {
-        public NativeManifold(Allocator allocator)
-        {
-            Points = new NativeList<ContactPoint>(MaxPoints, Allocator.Persistent);
-            Normal = 0;
-        }
-
         public const int MaxPoints = 24;
-
         public float3 Normal; //A -> B.
 
-        public NativeList<ContactPoint> Points;
+        private int _maxIndex;
 
-        public bool IsCreated => Points.IsCreated;
+        private NativeBuffer _points;
 
-        public void Add(ContactPoint cp)
+        public ContactPoint[] ToArray() => _points.ToArray<ContactPoint>(Length);
+
+        public ContactPoint this[int i] => _points.GetItem<ContactPoint>(i);
+
+        public int Length => _maxIndex + 1;
+
+        public bool IsCreated => _points.IsCreated;
+
+        public NativeManifold(Allocator allocator)
         {
-            Points.Add(cp);
+            _points = NativeBuffer.Create<ContactPoint>(MaxPoints, Allocator.Persistent);            
+            _maxIndex = -1;
+            Normal = 0;
         }
 
         public void Add(float3 position, float distance, ContactID id)
         {
-            Points.Add(new ContactPoint
+            Add(new ContactPoint
             {
                 Id = id,
                 Position = position,
@@ -36,16 +42,23 @@ namespace Vella.UnityNativeHull
             });
         }
 
+        public void Add(ContactPoint cp)
+        {
+            if (_maxIndex >= MaxPoints)
+                return;
+
+            _points.SetItem(++_maxIndex, cp);
+        }
+
         public void Dispose()
         {
-            if (Points.IsCreated)
+            if (_points.IsCreated)
             {
-                Points.Dispose();
+                _points.Dispose();
             }
         }
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 4)]
     public struct ContactPoint
     {        
         public ContactID Id;
@@ -76,22 +89,21 @@ namespace Vella.UnityNativeHull
         public float3 PositionOnSource;
     }
 
-    [StructLayout(LayoutKind.Explicit, Size = 4)]
+    //[StructLayout(LayoutKind.Explicit)]
     public struct ContactID
     {
-        [FieldOffset(0)]
+        //[FieldOffset(0)]
         public FeaturePair FeaturePair;
-        [FieldOffset(0)]
+        //[FieldOffset(0)]
         public int Key;
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct FeaturePair
     {
-        public sbyte InEdge1;
-        public sbyte OutEdge1;
-        public sbyte InEdge2;
-        public sbyte OutEdge2;
+        public int InEdge1;
+        public int OutEdge1;
+        public int InEdge2;
+        public int OutEdge2;
     }
 
 }

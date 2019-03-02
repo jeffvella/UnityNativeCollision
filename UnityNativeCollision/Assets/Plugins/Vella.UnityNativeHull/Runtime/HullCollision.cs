@@ -58,7 +58,7 @@ namespace Vella.UnityNativeHull
 
     public class HullCollision
     {
-        public static bool IsCollision(RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
+        public static bool IsColliding(RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2)
         {
             FaceQueryResult faceQuery;
 
@@ -204,7 +204,10 @@ namespace Vella.UnityNativeHull
             return math.dot(N, P2 - P1);
         }
 
-        public static bool ContainsPoint(RigidTransform t, NativeHull hull, float3 point)
+        /// <summary>
+        /// Determines if a world point is contained within a hull
+        /// </summary>
+        public static bool Contains(RigidTransform t, NativeHull hull, float3 point)
         {
             float maxDistance = -float.MaxValue;
             for (int i = 0; i < hull.FaceCount; ++i)
@@ -219,6 +222,9 @@ namespace Vella.UnityNativeHull
             return maxDistance < 0;
         }
 
+        /// <summary>
+        /// Finds the point on the surface of a hull closest to a world point.
+        /// </summary>
         public static float3 ClosestPoint(RigidTransform t, NativeHull hull, float3 point)
         {
             float distance = -float.MaxValue;
@@ -247,8 +253,8 @@ namespace Vella.UnityNativeHull
                 ref NativeHalfEdge current = ref start;
                 do
                 {
-                    var v1 = math.transform(t, current.GetOrigin(hull));
-                    var v2 = math.transform(t, current.GetTwinOrigin(hull));
+                    var v1 = math.transform(t, hull.GetVertex(current.Origin));
+                    var v2 = math.transform(t, hull.GetVertex(current.Twin));
 
                     var signedDistance = math.dot(math.cross(v2, v1), closestPlanePoint);
                     if (signedDistance < 0)

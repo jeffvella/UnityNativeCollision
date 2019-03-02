@@ -2,7 +2,6 @@
 using Unity.Collections;
 using Unity.Burst;
 using Vella.Common;
-using static Vella.UnityNativeHull.HullIterators;
 
 namespace Vella.UnityNativeHull
 {
@@ -20,23 +19,23 @@ namespace Vella.UnityNativeHull
         public BatchCollisionInput B;
     }
 
-    public static class HullBurstCollision
+    public static class HullOperations
     {
         [BurstCompile]
-        public struct IsCollision : IBurstFunction<RigidTransform, NativeHull, RigidTransform, NativeHull, bool>
+        public struct IsColliding : IBurstFunction<RigidTransform, NativeHull, RigidTransform, NativeHull, bool>
         {
 
             public bool Execute(RigidTransform t1, NativeHull hull1, RigidTransform t2, NativeHull hull2)
             {
-                return HullCollision.IsCollision(t1, hull1, t2, hull2);
+                return HullCollision.IsColliding(t1, hull1, t2, hull2);
             }
 
             public static bool Invoke(RigidTransform t1, NativeHull hull1, RigidTransform t2, NativeHull hull2)
             {
-                return BurstFunction<IsCollision, RigidTransform, NativeHull, RigidTransform, NativeHull, bool>.Run(Instance, t1, hull1, t2, hull2);
+                return BurstFunction<IsColliding, RigidTransform, NativeHull, RigidTransform, NativeHull, bool>.Run(Instance, t1, hull1, t2, hull2);
             }
 
-            public static IsCollision Instance { get; } = new IsCollision();
+            public static IsColliding Instance { get; } = new IsColliding();
         }
 
         [BurstCompile]
@@ -44,7 +43,7 @@ namespace Vella.UnityNativeHull
         {
             public bool Execute(RigidTransform t1, NativeHull hull1, float3 point)
             {
-                return HullCollision.ContainsPoint(t1, hull1, point);
+                return HullCollision.Contains(t1, hull1, point);
             }
 
             public static bool Invoke(RigidTransform t1, NativeHull hull1, float3 point)
@@ -72,6 +71,26 @@ namespace Vella.UnityNativeHull
         }
 
         [BurstCompile]
+        public struct TryGetContact : IBurstRefAction<NativeManifold, RigidTransform, NativeHull, RigidTransform, NativeHull>
+        {
+            public void Execute(ref NativeManifold manifold, RigidTransform t1, NativeHull hull1, RigidTransform t2, NativeHull hull2)
+            {
+                HullIntersection.NativeHullHullContact(ref manifold, t1, hull1, t2, hull2);
+            }
+
+            public static bool Invoke(out NativeManifold result, RigidTransform t1, NativeHull hull1, RigidTransform t2, NativeHull hull2)
+            {
+                // Burst Jobs can only allocate as 'temp'
+                result = new NativeManifold(Allocator.Persistent); 
+
+                BurstRefAction<TryGetContact, NativeManifold, RigidTransform, NativeHull, RigidTransform, NativeHull>.Run(Instance, ref result, t1, hull1, t2, hull2);
+                return result.Length > 0;
+            }
+
+            public static TryGetContact Instance { get; } = new TryGetContact();
+        }
+
+        [BurstCompile]
         public struct CollisionBatch : IBurstFunction<NativeArray<BatchCollisionInput>, NativeList<BatchCollisionResult>, bool>
         {
             public bool Execute(NativeArray<BatchCollisionInput> hulls, NativeList<BatchCollisionResult> results)
@@ -84,7 +103,7 @@ namespace Vella.UnityNativeHull
                         var a = hulls[i];
                         var b = hulls[j];
 
-                        if (HullCollision.IsCollision(a.Transform, a.Hull, b.Transform, b.Hull))
+                        if (HullCollision.IsColliding(a.Transform, a.Hull, b.Transform, b.Hull))
                         {
                             isCollision = true;
                             results.Add(new BatchCollisionResult
