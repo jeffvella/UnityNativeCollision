@@ -430,20 +430,10 @@ namespace Vella.UnityNativeHull
             NativePlane referencePlane = transform1 * refPlane;
 
             var clippingPlanes = new NativeBuffer<ClipPlane>(hull1.FaceCount, Allocator.Temp);
-
             //NativeList<ClipPlane> clippingPlanes = new NativeList<ClipPlane>((int)hull1.FaceCount, Allocator.Temp);
-
-
 
             // Find only the side planes of the reference face
             GetFaceSidePlanes(ref clippingPlanes, referencePlane, input.Index, transform1, hull1);
-
-            var z = 0;
-            foreach (var item in clippingPlanes)
-            {
-                z += item.edgeId;
-            }
-            var test = z;
 
             var incidentPolygon = new NativeBuffer<ClipVertex>(hull1.VertexCount, Allocator.Temp);
             var incidentFaceIndex = ComputeIncidentFaceIndex(referencePlane, transform2, hull2);
