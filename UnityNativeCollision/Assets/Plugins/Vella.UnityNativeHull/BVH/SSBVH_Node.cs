@@ -31,7 +31,7 @@ using Unity.Collections.LowLevel.Unsafe;
 namespace SimpleScene.Util.ssBVH
 {
     //[DebuggerDisplay("Node<{0}>:{1}")]
-    //public struct Node2<T> where T : struct, IBVHNode
+    //public struct Node2<T> where T : struct, IBVHNode, IEquatable<T>
     //{
     //    public SSAABB box;
 
@@ -134,7 +134,7 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
-        public void Refit_ObjectChanged<T>(IBVHNodeAdapter<T> nAda, ref T obj) where T : struct, IBVHNode
+        public void Refit_ObjectChanged<T>(IBVHNodeAdapter<T> nAda, ref T obj) where T : struct, IBVHNode, IEquatable<T>
         {
             if (!IsLeaf) { throw new Exception("dangling leaf!"); }
             if (refitVolume(nAda))
@@ -151,7 +151,7 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
-        private void ExpandVolume<T>(IBVHNodeAdapter<T> nAda, float3 objectpos, float radius) where T : struct, IBVHNode
+        private void ExpandVolume<T>(IBVHNodeAdapter<T> nAda, float3 objectpos, float radius) where T : struct, IBVHNode, IEquatable<T>
         {
             bool expanded = false;
 
@@ -199,12 +199,12 @@ namespace SimpleScene.Util.ssBVH
             box.Max.z = objectpos.z + radius;
         }
 
-        public ref NativeBuffer<T> Bucket<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode
+        public ref NativeBuffer<T> Bucket<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode, IEquatable<T>
         {
             return ref nAda.BVH.GetBucketRef(ItemIndex);
         }
 
-        internal void computeVolume<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode
+        internal void computeVolume<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode, IEquatable<T>
         {
             ref var bucket = ref nAda.BVH.GetBucketRef(ItemIndex);
             assignVolume(nAda.objectpos(bucket[0]), nAda.radius(bucket[0]));
@@ -220,17 +220,17 @@ namespace SimpleScene.Util.ssBVH
             //}
         }
 
-        public bool IsEmpty<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode
+        public bool IsEmpty<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode, IEquatable<T>
         {
             return !IsLeaf || Bucket(nAda).Length == 0;
         }
 
-        public int ItemCount<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode
+        public int ItemCount<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode, IEquatable<T>
         {
             return ItemIndex >= 0 ? Bucket(nAda).Length : 0;
         }
 
-        internal bool refitVolume<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode
+        internal bool refitVolume<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode, IEquatable<T>
         {            
             //if (Items.Count == 0) { throw new NotImplementedException(); }  // TODO: fix this... we should never get called in this case...
 
@@ -274,7 +274,7 @@ namespace SimpleScene.Util.ssBVH
 
             return 2.0f * ((x_size * y_size) + (x_size * z_size) + (y_size * z_size));
         }
-        internal static float SA<T>(IBVHNodeAdapter<T> nAda, T obj) where T : struct, IBVHNode
+        internal static float SA<T>(IBVHNodeAdapter<T> nAda, T obj) where T : struct, IBVHNode, IEquatable<T>
         {
             float radius = nAda.radius(obj);
 
@@ -301,7 +301,7 @@ namespace SimpleScene.Util.ssBVH
             pairbox.ExpandToFit(boxb);
             return SA(ref pairbox);
         }
-        internal static SSAABB AABBofOBJ<T>(IBVHNodeAdapter<T> nAda, T obj) where T : struct, IBVHNode
+        internal static SSAABB AABBofOBJ<T>(IBVHNodeAdapter<T> nAda, T obj) where T : struct, IBVHNode, IEquatable<T>
         {
             float radius = nAda.radius(obj);
             SSAABB box;
@@ -311,7 +311,7 @@ namespace SimpleScene.Util.ssBVH
             return box;
         }
 
-        internal static float SAofList<T>(IBVHNodeAdapter<T> nAda, List<T> list) where T : struct, IBVHNode
+        internal static float SAofList<T>(IBVHNodeAdapter<T> nAda, List<T> list) where T : struct, IBVHNode, IEquatable<T>
         {
             var box = AABBofOBJ(nAda, list[0]);
 
@@ -356,7 +356,7 @@ namespace SimpleScene.Util.ssBVH
         /// tryRotate looks at all candidate rotations, and executes the rotation with the best resulting SAH (if any)
         /// </summary>
         /// <param name="bvh"></param>
-        internal static void tryRotate<T>(Node* node, NativeBoundingHierarchy<T> bvh) where T : struct, IBVHNode
+        internal static void tryRotate<T>(Node* node, NativeBoundingHierarchy<T> bvh) where T : struct, IBVHNode, IEquatable<T>
         {
             IBVHNodeAdapter<T> nAda = bvh.adapter;
 
@@ -544,7 +544,7 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
-        internal void splitNode<T>(IBVHNodeAdapter<T> adapter) where T : struct, IBVHNode
+        internal void splitNode<T>(IBVHNodeAdapter<T> adapter) where T : struct, IBVHNode, IEquatable<T>
         {
             // second, decide which axis to split on, and sort..
             //List<T> splitlist = Items;
@@ -597,7 +597,7 @@ namespace SimpleScene.Util.ssBVH
         }
 
 
-        internal void splitIfNecessary<T>(IBVHNodeAdapter<T> adapter) where T : struct, IBVHNode
+        internal void splitIfNecessary<T>(IBVHNodeAdapter<T> adapter) where T : struct, IBVHNode, IEquatable<T>
         {
             if (ItemCount(adapter) > adapter.BVH.LEAF_OBJ_MAX)
             {
@@ -605,12 +605,12 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
-        internal void AddObject<T>(IBVHNodeAdapter<T> nAda, T newOb, ref SSAABB newObBox, float newObSAH) where T : struct, IBVHNode
+        internal void AddObject<T>(IBVHNodeAdapter<T> nAda, T newOb, ref SSAABB newObBox, float newObSAH) where T : struct, IBVHNode, IEquatable<T>
         {
             AddObject(nAda, ThisPtr, newOb, ref newObBox, newObSAH);
         }
 
-        internal static void AddObject<T>(IBVHNodeAdapter<T> nAda, Node* curNode, T newOb, ref SSAABB newObBox, float newObSAH) where T : struct, IBVHNode
+        internal static void AddObject<T>(IBVHNodeAdapter<T> nAda, Node* curNode, T newOb, ref SSAABB newObBox, float newObSAH) where T : struct, IBVHNode, IEquatable<T>
         {
             // 1. first we traverse the node looking for the best leaf
             while (curNode->ItemIndex == -1)
@@ -664,7 +664,7 @@ namespace SimpleScene.Util.ssBVH
         }
 
 
-        internal static void AddObject_Pushdown<T>(IBVHNodeAdapter<T> nAda, Node* curNode, T newOb) where T : struct, IBVHNode
+        internal static void AddObject_Pushdown<T>(IBVHNodeAdapter<T> nAda, Node* curNode, T newOb) where T : struct, IBVHNode, IEquatable<T>
         {
             var left = curNode->left;
             var right = curNode->right;
@@ -722,7 +722,7 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
-        internal void RemoveObject<T>(IBVHNodeAdapter<T> adapter, T newOb) where T : struct, IBVHNode
+        internal void RemoveObject<T>(IBVHNodeAdapter<T> adapter, T newOb) where T : struct, IBVHNode, IEquatable<T>
         {
             if (ItemIndex != -1) { throw new Exception("removeObject() called on nonLeaf!"); }
 
@@ -751,7 +751,7 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
-        void SetDepth<T>(IBVHNodeAdapter<T> nAda, int newdepth) where T : struct, IBVHNode
+        void SetDepth<T>(IBVHNodeAdapter<T> nAda, int newdepth) where T : struct, IBVHNode, IEquatable<T>
         {
             this.depth = newdepth;
             if (newdepth > nAda.BVH.maxDepth)
@@ -765,7 +765,7 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
-        internal void RemoveLeaf<T>(IBVHNodeAdapter<T> nAda, Node* removeLeaf) where T : struct, IBVHNode
+        internal void RemoveLeaf<T>(IBVHNodeAdapter<T> nAda, Node* removeLeaf) where T : struct, IBVHNode, IEquatable<T>
         {
             if (left == null || right == null) { throw new Exception("bad intermediate node"); }
 
@@ -834,7 +834,7 @@ namespace SimpleScene.Util.ssBVH
         }
 
 
-        internal void FindOverlappingLeaves<T>(IBVHNodeAdapter<T> nAda, float3 origin, float radius, List<Node> overlapList) where T : struct, IBVHNode
+        internal void FindOverlappingLeaves<T>(IBVHNodeAdapter<T> nAda, float3 origin, float radius, List<Node> overlapList) where T : struct, IBVHNode, IEquatable<T>
         {
             if (ToAABB().IntersectsSphere(origin, radius))
             {
@@ -850,7 +850,7 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
-        internal void FindOverlappingLeaves<T>(IBVHNodeAdapter<T> nAda, SSAABB aabb, List<Node> overlapList) where T : struct, IBVHNode
+        internal void FindOverlappingLeaves<T>(IBVHNodeAdapter<T> nAda, SSAABB aabb, List<Node> overlapList) where T : struct, IBVHNode, IEquatable<T>
         {
             if (ToAABB().IntersectsAABB(aabb))
             {
@@ -878,7 +878,7 @@ namespace SimpleScene.Util.ssBVH
             return aabb;
         }
 
-        internal void ChildExpanded<T>(IBVHNodeAdapter<T> nAda, Node child) where T : struct, IBVHNode
+        internal void ChildExpanded<T>(IBVHNodeAdapter<T> nAda, Node child) where T : struct, IBVHNode, IEquatable<T>
         {
             bool expanded = false;
 
@@ -913,12 +913,12 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
-        internal void ChildRefit<T>(IBVHNodeAdapter<T> nAda, bool propagate = true) where T : struct, IBVHNode
+        internal void ChildRefit<T>(IBVHNodeAdapter<T> nAda, bool propagate = true) where T : struct, IBVHNode, IEquatable<T>
         {
             ChildRefit(nAda, ThisPtr, propagate: propagate);
         }
 
-        internal static void ChildRefit<T>(IBVHNodeAdapter<T> nAda, Node* curNode, bool propagate = true) where T : struct, IBVHNode
+        internal static void ChildRefit<T>(IBVHNodeAdapter<T> nAda, Node* curNode, bool propagate = true) where T : struct, IBVHNode, IEquatable<T>
         {
             do
             {
@@ -951,7 +951,7 @@ namespace SimpleScene.Util.ssBVH
 
         //}
 
-        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh) where T : struct, IBVHNode
+        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh) where T : struct, IBVHNode, IEquatable<T>
             //internal Node(ssBVH<T> bvh)
         {
             //var node = new Node();
@@ -968,7 +968,7 @@ namespace SimpleScene.Util.ssBVH
             return node;
         }
 
-        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh, List<T> gobjectlist) where T : struct, IBVHNode
+        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh, List<T> gobjectlist) where T : struct, IBVHNode, IEquatable<T>
         {
             return Node.CreateNode<T>(bvh, null, gobjectlist, Axis.X, 0);
         }
@@ -977,7 +977,7 @@ namespace SimpleScene.Util.ssBVH
 
         //}
 
-        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh, Node* lparent, List<T> gobjectlist, Axis lastSplitAxis, int curdepth, int bucketIndex = -1) where T : struct, IBVHNode
+        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh, Node* lparent, List<T> gobjectlist, Axis lastSplitAxis, int curdepth, int bucketIndex = -1) where T : struct, IBVHNode, IEquatable<T>
         //private Node(ssBVH<T> bvh, Node<T> lparent, List<T> gobjectlist, Axis lastSplitAxis, int curdepth, int bucketIndex = -1)
         {
             Node* node = bvh.CreateNode();

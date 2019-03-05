@@ -15,13 +15,12 @@ public interface IBVHNode
     ref int HasChanged { get; }
 }
 
+
 [DebuggerDisplay("TestShape: Id={TransformId}")]
 public struct TestShape : IBVHNode, IEquatable<TestShape>
 {
     //public Transform Transform;
     public int TransformId;
-
-
 
     //public bool HasChanged()
     //{
@@ -104,6 +103,13 @@ public struct TestShape : IBVHNode, IEquatable<TestShape>
     {
         return TransformId;
     }
+
+    public bool Equals(IBVHNode other)
+    {
+        return Equals((TestShape)other);
+    }
+
+
 
     //public float3 CalculateMinMax()
     //{

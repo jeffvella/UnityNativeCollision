@@ -15,28 +15,28 @@ public class TestShapeBVH : NativeBoundingHierarchy<TestShape>
     }
 }
 
-public struct ShapeAdapter : IBVHNodeAdapter<TestShape>, IDisposable
+public struct ShapeAdapter : IBVHNodeAdapter<TestShape>
 {
-    public void Allocate(NativeBoundingHierarchy<TestShape> bvh)
+    public void SetBvH(NativeBoundingHierarchy<TestShape> bvh)
     {        
-        _map = new NativeHashMap<TestShape, Node>(NativeBoundingHierarchy<TestShape>.MaxNodes, Allocator.Persistent);
+        //_map = new NativeHashMap<TestShape, Node>(NativeBoundingHierarchy<TestShape>.MaxNodes, Allocator.Persistent);
         _bvh = bvh;
     }
 
     private NativeBoundingHierarchy<TestShape> _bvh;
 
-    private NativeHashMap<TestShape, Node> _map;
 
-    public bool IsCreated => _map.IsCreated;
+
+    //public bool IsCreated => _map.IsCreated;
 
     // public Dictionary<TestShape, Node> map = new Dictionary<TestShape, Node>();
 
     public NativeBoundingHierarchy<TestShape> BVH { get { return _bvh; } }
 
-    public void setBVH(NativeBoundingHierarchy<TestShape> bvh)
-    {
-        _bvh = bvh;
-    }
+    //public void setBVH(NativeBoundingHierarchy<TestShape> bvh)
+    //{
+    //    _bvh = bvh;
+    //}
 
     public float3 objectpos(TestShape shape)
     {
@@ -50,7 +50,7 @@ public struct ShapeAdapter : IBVHNodeAdapter<TestShape>, IDisposable
 
     public void checkMap(TestShape obj)
     { 
-        if(!_map.TryGetValue(obj, out Node item))
+        if(!_bvh._map.TryGetValue(obj, out Node item))
         //if (!map.ContainsKey(sphere))
         {
             throw new Exception("missing map for a shuffled child");
@@ -59,19 +59,19 @@ public struct ShapeAdapter : IBVHNodeAdapter<TestShape>, IDisposable
 
     public void UnmapObject(TestShape obj)
     {
-        _map.Remove(obj);
+        _bvh._map.Remove(obj);
     }
 
     public void mapObjectToBVHLeaf(TestShape sphere, Node leaf)
     {
         // why no set/replace functionality?????????
-        _map.Remove(sphere);
-        _map.TryAdd(sphere, leaf);
+        _bvh._map.Remove(sphere);
+        _bvh._map.TryAdd(sphere, leaf);
     }
 
     public Node getLeaf(TestShape obj)
     {
-        return _map.TryGetValue(obj, out Node item) ? _map[obj] : default;       
+        return _bvh._map.TryGetValue(obj, out Node item) ? _bvh._map[obj] : default;       
     }
 
     public void checkForChanges(TestShape obj)
@@ -79,20 +79,20 @@ public struct ShapeAdapter : IBVHNodeAdapter<TestShape>, IDisposable
         //if (obj.HasChanged == 1)
         //{
             //var o = obj;
-            if (_map.TryGetValue(obj, out Node item))
+            if (_bvh._map.TryGetValue(obj, out Node item))
             {
-                _map[obj].Refit_ObjectChanged(this, ref obj);
+                _bvh._map[obj].Refit_ObjectChanged(this, ref obj);
             }
         //}
     }
 
-    public void Dispose()
-    {
-        if(_map.IsCreated)
-        {
-            _map.Dispose();
-        }
-    }
+    //public void Dispose()
+    //{
+    //    if(_map.IsCreated)
+    //    {
+    //        _map.Dispose();
+    //    }
+    //}
 
 
 }

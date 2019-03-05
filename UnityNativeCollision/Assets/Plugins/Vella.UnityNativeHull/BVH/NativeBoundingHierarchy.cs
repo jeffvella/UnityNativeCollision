@@ -34,13 +34,13 @@ namespace SimpleScene.Util.ssBVH
         X, Y, Z,
     }
 
-    public interface IBVHNodeAdapter<T> : IDisposable where T : struct, IBVHNode 
+    public interface IBVHNodeAdapter<T> where T : struct, IBVHNode, IEquatable<T>
     {
-        void Allocate(NativeBoundingHierarchy<T> bvh);
+        void SetBvH(NativeBoundingHierarchy<T> bvh);
 
         NativeBoundingHierarchy<T> BVH { get; }
 
-        bool IsCreated { get; }
+        //bool IsCreated { get; }
 
         //void setBVH(NativeBoundingHierarchy<T> bvh);
 
@@ -59,7 +59,7 @@ namespace SimpleScene.Util.ssBVH
         Node getLeaf(T obj);
     }
 
-    public unsafe class NativeBoundingHierarchy<T> : IDisposable where T : struct, IBVHNode
+    public unsafe class NativeBoundingHierarchy<T> : IDisposable where T : struct, IBVHNode, IEquatable<T>
     {
         public const int MaxBuckets = 10;
         public const int MaxItemsPerBucket = 10;
@@ -75,11 +75,13 @@ namespace SimpleScene.Util.ssBVH
         public IBVHNodeAdapter<T> adapter;
 
         //public NativeList<Node<T>> items = new NativeList<Node<T>>();
-        
+
         // Heap array of pointers to other scattered heap arrays.
         public NativeBuffer<NativeBuffer<T>> dataBuckets;
 
         public NativeBuffer<Node> Nodes;
+
+        public NativeHashMap<T, Node> _map;
 
         //public NativeBuffer<Node2<T>> nodes;
 
@@ -306,11 +308,11 @@ namespace SimpleScene.Util.ssBVH
                 if(Nodes.IsCreated)
                 {
                     Nodes.Dispose();
-                }
-                if (adapter.IsCreated)
+                }  
+                if(_map.IsCreated)
                 {
-                    adapter.Dispose();
-                }           
+                    _map.Dispose();
+                }
             }
         }
 
@@ -324,11 +326,15 @@ namespace SimpleScene.Util.ssBVH
         {
             this.LEAF_OBJ_MAX = maxPerLeft;
 
-            nodeAdaptor.Allocate(this);
+            //nodeAdaptor.Allocate(this);
+
+            this._map = new NativeHashMap<T, Node>(MaxNodes, Allocator.Persistent);
 
             //nodeAdaptor.setBVH(this);
 
             this.adapter = nodeAdaptor;
+
+            this.adapter.SetBvH(this);               
 
             this.dataBuckets = new NativeBuffer<NativeBuffer<T>>(MaxBuckets, Allocator.Persistent);
 
