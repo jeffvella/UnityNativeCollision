@@ -1,0 +1,307 @@
+﻿// Copyright(C) David W. Jeske, 2014, and released to the public domain. 
+//
+// Dynamic BVH (Bounding Volume Hierarchy) using incremental refit and tree-rotations
+//
+// initial BVH build based on: Bounding Volume Hierarchies (BVH) – A brief tutorial on what they are and how to implement them
+//              http://www.3dmuve.com/3dmblog/?p=182
+//
+// Dynamic Updates based on: "Fast, Effective BVH Updates for Animated Scenes" (Kopta, Ize, Spjut, Brunvand, David, Kensler)
+//              https://github.com/jeske/SimpleScene/blob/master/SimpleScene/Util/ssBVH/docs/BVH_fast_effective_updates_for_animated_scenes.pdf
+//
+// see also:  Space Partitioning: Octree vs. BVH
+//            http://thomasdiewald.com/blog/?p=1488
+//
+//
+
+using JacksonDunstan.NativeCollections;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using Unity.Collections;
+using Unity.Mathematics;
+using Vella.Common;
+
+//using OpenTK;
+
+// TODO: handle merge/split when LEAF_OBJ_MAX > 1 and objects move
+// TODO: add sphere traversal
+
+namespace SimpleScene.Util.ssBVH
+{
+    public enum Axis
+    {
+        X, Y, Z,
+    }
+
+    public interface IBVHNodeAdapter<T> where T : struct, IBVHNode
+    {
+        ssBVH<T> BVH { get; }
+
+        void setBVH(ssBVH<T> bvh);
+
+        float3 objectpos(T obj);
+
+        float radius(T obj);
+
+        void mapObjectToBVHLeaf(T obj, Node<T> leaf);
+
+        void UnmapObject(T obj);
+
+        void checkMap(T obj);
+
+        void checkForChanges(T obj);
+
+        Node<T> getLeaf(T obj);
+    }
+
+    public class ssBVH<T> : IDisposable where T : struct, IBVHNode
+    {
+        public Node<T> rootBVH;
+
+        public IBVHNodeAdapter<T> nAda;
+
+        //public NativeList<Node<T>> items = new NativeList<Node<T>>();
+
+        public NativeBuffer<NativeBuffer<T>> dataBuckets;
+
+        //public NativeBuffer<Node2<T>> nodes;
+
+        public readonly int LEAF_OBJ_MAX;
+        public int nodeCount = 0;
+        public int maxDepth = 0;
+
+        public ref NativeBuffer<T> FindBucket(int index)
+        {
+            return ref dataBuckets[index];
+        }
+
+        public ref NativeBuffer<T> FindBucket(Node<T> node)
+        {
+            return ref dataBuckets[node.ItemIndex];
+        }
+
+        //public ref Node2<T> GetNode(int index)
+        //{
+        //    return ref nodes[index];
+        //}
+
+        public int CreateBucket()
+        {
+            return dataBuckets.Add(new NativeBuffer<T>(10, Allocator.Persistent));
+        }
+
+        public HashSet<Node<T>> refitNodes = new HashSet<Node<T>>();
+
+        public delegate bool NodeTest(SSAABB box);
+
+        // internal functional traversal...
+        private void _traverse(Node<T> curNode, NodeTest hitTest, List<Node<T>> hitlist)
+        {
+            if (curNode == null) { return; }
+            if (hitTest(curNode.box))
+            {
+                hitlist.Add(curNode);
+
+                _traverse(curNode.left, hitTest, hitlist);
+                _traverse(curNode.right, hitTest, hitlist);
+            }
+        }
+
+        private void _traverse(Node<T> curNode, Func<Node<T>,bool> hitTest, List<Node<T>> hitlist)
+        {
+            if (curNode == null || hitTest == null) { return; }
+            if (hitTest.Invoke(curNode))
+            {
+                hitlist.Add(curNode);
+                _traverse(curNode.left, hitTest, hitlist);
+                _traverse(curNode.right, hitTest, hitlist);
+            }
+        }
+
+        // public interface to traversal..
+        public List<Node<T>> Traverse(NodeTest hitTest)
+        {
+            var hits = new List<Node<T>>();
+            this._traverse(rootBVH, hitTest, hits);
+            return hits;
+        }
+
+
+        public List<Node<T>> TraverseNode(Func<Node<T>, bool> hitTest)
+        {
+            var hits = new List<Node<T>>();
+            this._traverse(rootBVH, hitTest, hits);
+            return hits;
+        }
+
+
+        //// left in for compatibility..
+        //public List<ssBVHNode<GO>> traverseRay(SSRay ray)
+        //{
+        //    float tnear = 0f, tfar = 0f;
+
+        //    return traverse(box => OpenTKHelper.intersectRayAABox1(ray, box, ref tnear, ref tfar));
+        //}
+
+        //public List<ssBVHNode<GO>> traverse(SSRay ray)
+        //{
+        //    float tnear = 0f, tfar = 0f;
+
+        //    return traverse(box => OpenTKHelper.intersectRayAABox1(ray, box, ref tnear, ref tfar));
+        //}
+
+        public List<Node<T>> traverse(SSAABB volume)
+        {
+            return Traverse(box => box.IntersectsAABB(volume));
+        }
+
+        /// <summary>
+        /// Call this to batch-optimize any object-changes notified through 
+        /// ssBVHNode.refit_ObjectChanged(..). For example, in a game-loop, 
+        /// call this once per frame.
+        /// </summary>
+
+        public void optimize()
+        {
+            if (LEAF_OBJ_MAX != 1)
+            {
+                throw new Exception("In order to use optimize, you must set LEAF_OBJ_MAX=1");
+            }
+
+            while (refitNodes.Count > 0)
+            {
+                int maxdepth = refitNodes.Max(n => n.depth);
+
+                var sweepNodes = refitNodes.Where(n => n.depth == maxdepth).ToList();
+                sweepNodes.ForEach(n => refitNodes.Remove(n));
+                sweepNodes.ForEach(n => n.tryRotate(this));
+            }
+        }
+
+        public void CheckForChanges()
+        {
+            TraverseForChanges(rootBVH);
+        }
+
+        private void TraverseForChanges(Node<T> curNode)
+        {
+            // object driven update alternative is to have an event T, which is registered in IBVHNodeAdapter.mapObjectToBVHLeaf(), 
+            // and when triggered should checkForChanges/ add itself to Refit_ObjectChanged().
+
+            if (curNode == null)
+                return;
+            
+            //if(curNode.Items?.Count > 0)
+            //{
+            //    for (int i = 0; i < curNode.Items.Count; i++)
+            //    {
+            //        var item = curNode.Items[0];
+            //        nAda.checkForChanges(ref item);
+            //    }
+            //}
+
+
+            //ref var bucket = ref FindBucket(curNode);
+            //foreach(var item in bucket)
+            //{
+            //    nAda.checkForChanges(item);
+            //}
+
+            //if (curNode.Items?.Count > 0)
+            //{
+            //    for (int i = 0; i < curNode.Items.Count; i++)
+            //    {
+            //        var item = curNode.Items[0];
+            //        nAda.checkForChanges(ref item);
+            //    }
+            //}
+
+            TraverseForChanges(curNode.left);
+            TraverseForChanges(curNode.right);            
+        }
+
+
+        public void addObject(T newOb)
+        {
+            SSAABB box = SSAABB.FromSphere(nAda.objectpos(newOb), nAda.radius(newOb));
+
+            float boxSAH = Node<T>.SA(ref box);
+
+            rootBVH.AddObject(nAda, newOb, ref box, boxSAH);
+        }
+
+        public void removeObject(T newObj)
+        {
+            var leaf = nAda.getLeaf(newObj);
+            leaf.RemoveObject(nAda, newObj);
+        }
+
+        public int countBVHNodes()
+        {
+            return rootBVH.CountBVHNodes();
+        }
+
+        public void Dispose()
+        {
+            if(dataBuckets.IsCreated)
+            {
+                foreach (var item in dataBuckets)
+                {
+                    if (item.IsCreated)
+                    {
+                        item.Dispose();
+                    }
+                }
+                dataBuckets.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// initializes a BVH with a given nodeAdaptor, and object list.
+        /// </summary>
+        /// <param name="nodeAdaptor"></param>
+        /// <param name="objects"></param>
+        /// <param name="LEAF_OBJ_MAX">WARNING! currently this must be 1 to use dynamic BVH updates</param>
+        public ssBVH(IBVHNodeAdapter<T> nodeAdaptor, List<T> objects = null, int LEAF_OBJ_MAX = 1)
+        {
+            this.LEAF_OBJ_MAX = LEAF_OBJ_MAX;
+
+            nodeAdaptor.setBVH(this);
+
+            this.nAda = nodeAdaptor;
+
+            this.dataBuckets = new NativeBuffer<NativeBuffer<T>>(10, Allocator.Persistent);
+
+            //this.nodes = new NativeBuffer<Node2<T>>(100, Allocator.Persistent);
+
+            //var root = new NativeBuffer<T>(10, Allocator.Persistent);
+
+            //root.Add(new T());
+
+            //var index = this.dataBuckets.Add(root);
+
+            //var first = this.dataBuckets.InsertAfter(this.dataBuckets.Tail, root);
+
+            //var test = this.dataBuckets[first.m_Index];
+
+            //var rootNode = new Node<T>();
+
+            //this.items.InsertAfter(items.Tail, rootNode);
+
+            //this.items = new NativeLinkedList<T>(100, Allocator.Persistent);
+
+            //if (objects?.Count > 0)
+            //{
+            //    rootBVH = new ssBVHNode<T>(this, objects);
+
+            //}
+            //else
+            //{
+                rootBVH = new Node<T>(this);
+  
+                //rootBVH.Items = new List<T>(); // it's a leaf, so give it an empty object list
+            //}
+        }
+    }
+}

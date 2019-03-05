@@ -100,7 +100,8 @@ namespace Vella.UnityNativeHull
             // Clip face polygon against the clipping planes.
             for (int i = 0; i < clippingPlanes.Length; ++i)
             {
-                NativeBuffer<ClipVertex> outputPolygon = new NativeBuffer<ClipVertex>(hull1.VertexCount, Allocator.Temp);
+                NativeBuffer<ClipVertex> outputPolygon = new NativeBuffer<ClipVertex>(math.max(hull1.VertexCount, hull2.VertexCount), Allocator.Temp);
+
                 Clip(clippingPlanes[i], ref incidentPolygon, ref outputPolygon);
 
                 if (outputPolygon.Length == 0)
@@ -444,7 +445,7 @@ namespace Vella.UnityNativeHull
             // Clip face polygon against the clipping planes.
             for (int i = 0; i < clippingPlanes.Length; ++i)
             {
-                var outputPolygon = new NativeBuffer<ClipVertex>(hull1.VertexCount, Allocator.Temp);
+                var outputPolygon = new NativeBuffer<ClipVertex>(hull2.VertexCount, Allocator.Temp);
                 Clip(clippingPlanes[i], ref incidentPolygon, ref outputPolygon);
 
                 if (outputPolygon.Length == 0)

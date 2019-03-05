@@ -6,6 +6,8 @@ using System;
 using Unity.Collections;
 using Vella.Common;
 using Vella.UnityNativeHull;
+using SimpleScene;
+
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -24,17 +26,55 @@ public class HullTester : MonoBehaviour
     public bool DrawIntersection;
     public bool DrawClosestFace;
     public bool DrawClosestPoint;
+    public bool DrawBVH;
 
     [Header("Console Logging")]
     public bool LogCollisions;
     public bool LogClosestPoint;
     public bool LogContact;
 
-    private Dictionary<int, (Transform Transform, NativeHull Hull)> Hulls;
+    private Dictionary<int, TestShape> Hulls;
+    private Dictionary<int, GameObject> GameObjects;
+    private TestShapeBVH _bvh;
+
 
     unsafe void Update()
     {
         HandleTransformChanged();
+
+        foreach (var transform in Transforms)
+        {
+            var id = transform.GetInstanceID();
+
+            for (int i = 0; i < _bvh.dataBuckets.Length; i++)
+            {
+                for (int j = 0; j < _bvh.dataBuckets[i].Length; j++)
+                {
+                    ref var shape = ref _bvh.dataBuckets[i][j];
+                    if (shape.TransformId == id)
+                    {
+                        shape.HasChanged = transform.hasChanged ? 1 : 0;
+                        shape.Transform = new RigidTransform(transform.rotation, transform.position);
+                    }
+                }
+            }            
+        }
+
+        //foreach(var transform in Transforms)
+        //{
+        //    var id = transform.GetInstanceID();
+
+        //    if (transform.hasChanged)
+        //    {
+        //        Hulls[].SetTransform(new RigidTransform(transform.rotation, transform.position));
+        //    }
+        //    else
+        //    {
+        //        Hulls[transform.GetInstanceID()].SetTransform();
+
+
+        //    }
+        //}
 
         HandleHullCollisions();
     }
@@ -114,7 +154,7 @@ public class HullTester : MonoBehaviour
         var batchInput = Hulls.Select(t => new BatchCollisionInput
         {
             Id = t.Key,
-            Transform = new RigidTransform(t.Value.Transform.rotation, t.Value.Transform.position),
+            Transform = new RigidTransform(t.Value.Transform.rot, t.Value.Transform.pos),
             Hull = t.Value.Hull,
 
         }).ToArray();
@@ -132,7 +172,7 @@ public class HullTester : MonoBehaviour
             {
                 foreach (var result in results.AsArray())
                 {
-                    Debug.Log($" > {Hulls[result.A.Id].Transform.gameObject.name} collided with {Hulls[result.B.Id].Transform.gameObject.name}");
+                    Debug.Log($" > {GameObjects[result.A.Id].name} collided with {GameObjects[result.B.Id].name}");
                 }
             }
         }
@@ -223,13 +263,62 @@ public class HullTester : MonoBehaviour
 
     private void HandleTransformChanged()
     {
-        var changed = Transforms.Where(t => t != null).Any(t => !Hulls?.ContainsKey(t.GetInstanceID()) ?? true);
-        if (changed)
+        var sourceCollectionChanged = Transforms?.Count != Hulls?.Count || Transforms.Where(t => t != null).Any(t => !Hulls?.ContainsKey(t.GetInstanceID()) ?? true);
+        if (sourceCollectionChanged)
         {
             EnsureDestroyed();
 
-            Hulls = Transforms.Where(t => t != null).ToDictionary(k => k.GetInstanceID(), v => (v, CreateHull(v)));
+            _bvh = new TestShapeBVH();
+
+            Hulls = Transforms.Where(t => t != null).ToDictionary(k => k.GetInstanceID(), t => CreateShape(t));
+            GameObjects = Transforms.Where(t => t != null).ToDictionary(k => k.GetInstanceID(), t => t.gameObject);
+
+            foreach (var shape in Hulls.Values)
+            {
+                _bvh.addObject(shape);
+            }
         }
+
+        var test = Hulls.First().Value;
+
+        var mappedNode = _bvh.nAda.getLeaf(test);
+
+        var bucket = _bvh.FindBucket(mappedNode.ItemIndex);
+
+        _bvh.CheckForChanges();
+        _bvh.optimize();
+
+        if (DrawBVH)
+        {
+            _bvh.TraverseNode(node =>
+            {
+                DebugDrawer.DrawDottedWireCube(node.box.Center(), node.box.Diff(), UnityColors.LightSlateGray.ToOpacity(0.6f));
+                return true;
+            });
+        }
+    }
+
+    private TestShape CreateShape(Transform t)
+    {
+        var bounds = new SSAABB();
+        var hull = CreateHull(t);
+
+        for (int i = 0; i < hull.VertexCount; i++)
+        {
+            var v = hull.GetVertex(i);
+            bounds.Encapsulate(v);
+        }
+
+        var sphere = SimpleScene.BoundingSphere.FromAABB(bounds);
+
+        return new TestShape
+        {
+            BoundingBox = bounds,
+            BoundingSphere = sphere,
+            TransformId = t.GetInstanceID(),
+            Transform = new RigidTransform(t.rotation, t.position),
+            Hull = hull,
+        };
     }
 
     private NativeHull CreateHull(Transform v)
@@ -290,10 +379,14 @@ public class HullTester : MonoBehaviour
             }
         }
 
+        _bvh.Dispose();
         Hulls.Clear();
     }
 
 
+
+
 }
+
 
 

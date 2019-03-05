@@ -13,7 +13,7 @@ using UnityEngine.Internal;
 namespace Vella.Common
 {
     /// <summary>
-    /// NativeBuffer<T> is an alternative to NativeList<T>. 
+    /// NativeBuffer<T> is an alternative to NativeArray<T>. 
     /// (NativeList<T> currently has issues being instantiated within a burst job)
     /// </summary>
     [NativeContainer]
@@ -30,9 +30,49 @@ namespace Vella.Common
             _maxIndex = -1;
         }
 
-        public unsafe T this[int i] => _buffer.GetItem<T>(i);
+        public unsafe ref T this[int i] => ref _buffer.AsRef<T>(i);
 
-        public void Add(T item) => _buffer.SetItem(++_maxIndex, item);
+        public int Add(T item)
+        {
+            try
+            {
+                if (_maxIndex + 1 >= _buffer.Length)
+                    throw new IndexOutOfRangeException();
+            }
+            catch (Exception ex)
+            {
+
+            }
+
+
+            _buffer.SetItem(++_maxIndex, item);
+            return _maxIndex;
+        }
+
+        public bool Remove(int index)
+        {
+            if (index > 0 && index < _maxIndex)
+            {   
+                // Move every item afterwards forward one.
+                for (int i = index + 1; i < _maxIndex; i++)
+                {
+                    this[i - 1] = this[i];
+                }
+                _maxIndex--;
+                return true;
+            }
+            return false;
+        }
+
+        public int IndexOf(T item)
+        {
+            for (int i = 0; i < Length; i++)
+            {
+                if (this[i].Equals(item))
+                    return i;
+            }
+            return -1;
+        }
 
         public int Capacity => _buffer.Length;
 
@@ -40,7 +80,11 @@ namespace Vella.Common
 
         public bool IsCreated => _buffer.IsCreated;
 
-        public void Clear() => NativeBuffer.Clear<T>(_buffer);
+        public void Clear()
+        {
+            NativeBuffer.Clear<T>(_buffer);
+            _maxIndex = -1;
+        }
 
         public T[] ToArray() => _buffer.ToArray<T>(Length);
 
@@ -65,6 +109,8 @@ namespace Vella.Common
 
             public ref T Current => ref _source._buffer.AsRef<T>(_index);
         }
+
+
     }
 
     internal sealed class NativeBufferDebugView<T> where T : struct

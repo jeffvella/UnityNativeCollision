@@ -254,7 +254,7 @@ namespace Vella.UnityNativeHull
                 do
                 {
                     var v1 = math.transform(t, hull.GetVertex(current.Origin));
-                    var v2 = math.transform(t, hull.GetVertex(current.Twin));
+                    var v2 = math.transform(t, hull.GetVertex(hull.GetEdge(current.Twin).Origin));
 
                     var signedDistance = math.dot(math.cross(v2, v1), closestPlanePoint);
                     if (signedDistance < 0)
