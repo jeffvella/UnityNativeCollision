@@ -660,7 +660,7 @@ namespace SimpleScene.Util.ssBVH
 
             ref var bucket = ref Bucket(adapter);
             var idx = bucket.IndexOf(newOb);
-            bucket.Remove(idx);
+            bucket.RemoveAt(idx);
 
             //Items.Remove(newOb);
 

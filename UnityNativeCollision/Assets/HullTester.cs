@@ -189,7 +189,7 @@ public class HullTester : MonoBehaviour
                 HullIntersection.DrawNativeHullHullIntersection(t1, hull1, t2, hull2);              
             }
 
-            if (DrawContact)  // Visualize the minimal contact calcluation for physics
+            if (DrawContact || LogContact)  // Visualize the minimal contact calcluation for physics
             {
                 //var manifold = HullOperations.GetContact.Invoke(t1, hull1, t2, hull2);
                 
@@ -208,7 +208,7 @@ public class HullTester : MonoBehaviour
                     Debug.Log($"GetContact between '{a.name}'/'{b.name}' took: {sw1.Elapsed.TotalMilliseconds:N4}ms (Normal), {sw2.Elapsed.TotalMilliseconds:N4}ms (Burst)");
                 }
 
-                if (burstResult)
+                if (DrawContact && burstResult)
                 {
                     // Do something with manifold
 

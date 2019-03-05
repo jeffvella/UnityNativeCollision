@@ -24,6 +24,17 @@ namespace Vella.Common
         NativeBuffer _buffer;
         private int _maxIndex;
 
+        /// <summary>
+        /// Initialize the buffer with a preallocated memory space (e.g. stackalloc ptr)
+        /// </summary>
+        /// <param name="ptr">starting address of the allocated memory</param>
+        /// <param name="elementCount">number of T sized elements in the allocation</param>
+        public unsafe NativeBuffer(void* ptr, int elementCount)
+        {
+            _buffer = NativeBuffer.Assign<T>(ptr, elementCount);
+            _maxIndex = -1;
+        }
+
         public NativeBuffer(int length, Allocator allocator, NativeArrayOptions options = NativeArrayOptions.ClearMemory)
         {
             _buffer = NativeBuffer.Create<T>(length, allocator, options);
@@ -33,35 +44,33 @@ namespace Vella.Common
         public unsafe ref T this[int i] => ref _buffer.AsRef<T>(i);
 
         public int Add(T item)
-        {
-            try
-            {
-                if (_maxIndex + 1 >= _buffer.Length)
-                    throw new IndexOutOfRangeException();
-            }
-            catch (Exception ex)
-            {
-
-            }
-
-
+        { 
             _buffer.SetItem(++_maxIndex, item);
             return _maxIndex;
         }
 
-        public bool Remove(int index)
+        public bool RemoveAt(int index)
         {
             if (index > 0 && index < _maxIndex)
             {   
-                // Move every item afterwards forward one.
+                // Shuffle forward every item after the removed index
                 for (int i = index + 1; i < _maxIndex; i++)
                 {
-                    this[i - 1] = this[i];
+                    _buffer.SetItem(i - 1, _buffer.GetItem<T>(i));          
                 }
                 _maxIndex--;
                 return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Overwrite the item to be removed with the last item in the collection.
+        /// Very fast operation but does not maintain the order of items.
+        /// </summary>  
+        public void RemoveAtSwapBack(int index)
+        {
+            _buffer.SetItem(index, _buffer.GetItem<T>(--_maxIndex));
         }
 
         public int IndexOf(T item)
@@ -72,6 +81,18 @@ namespace Vella.Common
                     return i;
             }
             return -1;
+        }
+
+        public void Reverse()   
+        {
+            var index1 = 0;
+            for (var index2 = _maxIndex; index1 < index2; --index2)
+            {
+                var obj = _buffer.GetItem<T>(index1);
+                _buffer.SetItem(index1, _buffer.GetItem<T>(index2));
+                _buffer.SetItem(index2, obj);   
+                ++index1;
+            }
         }
 
         public int Capacity => _buffer.Length;
@@ -138,6 +159,7 @@ namespace Vella.Common
         internal int m_Length;
         internal int m_MinIndex;
         internal int m_MaxIndex;
+        internal int itemSize;
 
 
         public int Length => m_Length;
@@ -152,6 +174,21 @@ namespace Vella.Common
 
         internal int m_AllocatorLabel;
 
+        public static unsafe NativeBuffer Assign<T>(void* ptr, int length) where T : struct
+        {
+            NativeBuffer buffer;
+            buffer.m_Buffer = ptr;
+            buffer.m_Length =
+            buffer.itemSize = UnsafeUtility.SizeOf<T>();
+            buffer.m_MinIndex = 0;
+            buffer.m_MaxIndex = length - 1;
+            buffer.m_AllocatorLabel = (int)Allocator.Invalid;
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            buffer.m_Safety = AtomicSafetyHandle.Create();
+#endif
+            return buffer;
+        }
+
         public static unsafe NativeBuffer Create<T>(int length, Allocator allocator, NativeArrayOptions options = NativeArrayOptions.ClearMemory) where T : struct
         {
             Allocate<T>(length, allocator, out NativeBuffer buffer);
@@ -159,7 +196,7 @@ namespace Vella.Common
             if ((options & NativeArrayOptions.ClearMemory) != NativeArrayOptions.ClearMemory)
                 return buffer;
 
-            NativeBuffer.Clear<T>(buffer);
+            Clear<T>(buffer);
             return buffer;
         }
 
@@ -186,7 +223,6 @@ namespace Vella.Common
 
         private static unsafe void Allocate<T>(int length, Allocator allocator, out NativeBuffer array) where T : struct
         {
-            NativeBuffer buffer;
             long size = (long)UnsafeUtility.SizeOf<T>() * (long)length;
             if (allocator <= Allocator.None)
                 throw new ArgumentException("Allocator must be Temp, TempJob or Persistent", nameof(allocator));
@@ -200,6 +236,7 @@ namespace Vella.Common
             array.m_AllocatorLabel = (int)allocator;
             array.m_MinIndex = 0;
             array.m_MaxIndex = length - 1;
+            array.itemSize = UnsafeUtility.SizeOf<T>();
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             array.m_Safety = AtomicSafetyHandle.Create();
 #endif
@@ -262,7 +299,7 @@ namespace Vella.Common
         public unsafe void SetItem<T>(int index, T value)
         {
             CheckElementWriteAccess(index);            
-            UnsafeUtility.WriteArrayElement<T>(m_Buffer, index, value);          
+            UnsafeUtility.WriteArrayElement(m_Buffer, index, value);          
         }
 
         public unsafe bool IsCreated
@@ -277,7 +314,9 @@ namespace Vella.Common
         public unsafe void Dispose()
         {
             if (!UnsafeUtility.IsValidAllocator((Allocator)m_AllocatorLabel))
-                throw new InvalidOperationException("The NativeArray2 can not be Disposed because it was not allocated with a valid allocator.");
+            {
+                throw new InvalidOperationException("The NativeArray2 can not be Disposed because it was not allocated with a valid allocator ("+ (Allocator)m_AllocatorLabel + ").");
+            }
 
            // DisposeSentinel.Dispose(ref this.m_Safety, ref this.m_DisposeSentinel);
 
@@ -619,6 +658,8 @@ namespace Vella.Common
         {
             return m_Buffer;
         }
+
+
 
     }
 
