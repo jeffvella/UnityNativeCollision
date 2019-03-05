@@ -20,7 +20,7 @@ public class TestShapeNodeAdapter : IBVHNodeAdapter<TestShape>
 
     //public NativeHashMap<TestShape, Node<TestShape>> map = new NativeHashMap<TestShape, Node<TestShape>>();
 
-    public Dictionary<TestShape, Node<TestShape>> map = new Dictionary<TestShape, Node<TestShape>>();
+    public Dictionary<TestShape, Node> map = new Dictionary<TestShape, Node>();
 
     public ssBVH<TestShape> BVH { get { return _bvh; } }
 
@@ -52,12 +52,12 @@ public class TestShapeNodeAdapter : IBVHNodeAdapter<TestShape>
         map.Remove(sphere);
     }
 
-    public void mapObjectToBVHLeaf(TestShape sphere, Node<TestShape> leaf)
+    public void mapObjectToBVHLeaf(TestShape sphere, Node leaf)
     {
         map[sphere] = leaf;
     }
 
-    public Node<TestShape> getLeaf(TestShape sphere)
+    public Node getLeaf(TestShape sphere)
     {
         return map.ContainsKey(sphere) ? map[sphere] : default;       
     }

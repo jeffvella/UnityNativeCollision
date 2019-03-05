@@ -44,7 +44,7 @@ namespace SimpleScene.Util.ssBVH
 
         float radius(T obj);
 
-        void mapObjectToBVHLeaf(T obj, Node<T> leaf);
+        void mapObjectToBVHLeaf(T obj, Node leaf);
 
         void UnmapObject(T obj);
 
@@ -52,31 +52,38 @@ namespace SimpleScene.Util.ssBVH
 
         void checkForChanges(T obj);
 
-        Node<T> getLeaf(T obj);
+        Node getLeaf(T obj);
     }
 
-    public class ssBVH<T> : IDisposable where T : struct, IBVHNode
+    public unsafe class ssBVH<T> : IDisposable where T : struct, IBVHNode
     {
-        public Node<T> rootBVH;
+        public const int MaxBuckets = 10;
+        public const int MaxItemsPerBucket = 10;
+
+        public Node rootBVH;
+
+        //public Node* rootBVHPtr;
 
         public IBVHNodeAdapter<T> nAda;
 
         //public NativeList<Node<T>> items = new NativeList<Node<T>>();
-
+        
+        // Heap array of pointers to other scattered heap arrays.
         public NativeBuffer<NativeBuffer<T>> dataBuckets;
 
         //public NativeBuffer<Node2<T>> nodes;
 
         public readonly int LEAF_OBJ_MAX;
+
         public int nodeCount = 0;
         public int maxDepth = 0;
 
-        public ref NativeBuffer<T> FindBucket(int index)
+        public ref NativeBuffer<T> GetBucket(int index)
         {
             return ref dataBuckets[index];
         }
 
-        public ref NativeBuffer<T> FindBucket(Node<T> node)
+        public ref NativeBuffer<T> GetBucket(Node node)
         {
             return ref dataBuckets[node.ItemIndex];
         }
@@ -88,15 +95,15 @@ namespace SimpleScene.Util.ssBVH
 
         public int CreateBucket()
         {
-            return dataBuckets.Add(new NativeBuffer<T>(10, Allocator.Persistent));
+            return dataBuckets.Add(new NativeBuffer<T>(MaxItemsPerBucket, Allocator.Persistent));
         }
 
-        public HashSet<Node<T>> refitNodes = new HashSet<Node<T>>();
+        public HashSet<Node> refitNodes = new HashSet<Node>();
 
         public delegate bool NodeTest(SSAABB box);
 
         // internal functional traversal...
-        private void _traverse(Node<T> curNode, NodeTest hitTest, List<Node<T>> hitlist)
+        private void _traverse(Node curNode, NodeTest hitTest, List<Node> hitlist)
         {
             if (curNode == null) { return; }
             if (hitTest(curNode.box))
@@ -108,7 +115,7 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
-        private void _traverse(Node<T> curNode, Func<Node<T>,bool> hitTest, List<Node<T>> hitlist)
+        private void _traverse(Node curNode, Func<Node,bool> hitTest, List<Node> hitlist)
         {
             if (curNode == null || hitTest == null) { return; }
             if (hitTest.Invoke(curNode))
@@ -120,17 +127,17 @@ namespace SimpleScene.Util.ssBVH
         }
 
         // public interface to traversal..
-        public List<Node<T>> Traverse(NodeTest hitTest)
+        public List<Node> Traverse(NodeTest hitTest)
         {
-            var hits = new List<Node<T>>();
+            var hits = new List<Node>();
             this._traverse(rootBVH, hitTest, hits);
             return hits;
         }
 
 
-        public List<Node<T>> TraverseNode(Func<Node<T>, bool> hitTest)
+        public List<Node> TraverseNode(Func<Node, bool> hitTest)
         {
-            var hits = new List<Node<T>>();
+            var hits = new List<Node>();
             this._traverse(rootBVH, hitTest, hits);
             return hits;
         }
@@ -151,7 +158,7 @@ namespace SimpleScene.Util.ssBVH
         //    return traverse(box => OpenTKHelper.intersectRayAABox1(ray, box, ref tnear, ref tfar));
         //}
 
-        public List<Node<T>> traverse(SSAABB volume)
+        public List<Node> traverse(SSAABB volume)
         {
             return Traverse(box => box.IntersectsAABB(volume));
         }
@@ -184,7 +191,7 @@ namespace SimpleScene.Util.ssBVH
             TraverseForChanges(rootBVH);
         }
 
-        private void TraverseForChanges(Node<T> curNode)
+        private void TraverseForChanges(Node curNode)
         {
             // object driven update alternative is to have an event T, which is registered in IBVHNodeAdapter.mapObjectToBVHLeaf(), 
             // and when triggered should checkForChanges/ add itself to Refit_ObjectChanged().
@@ -226,7 +233,7 @@ namespace SimpleScene.Util.ssBVH
         {
             SSAABB box = SSAABB.FromSphere(nAda.objectpos(newOb), nAda.radius(newOb));
 
-            float boxSAH = Node<T>.SA(ref box);
+            float boxSAH = Node.SA(ref box);
 
             rootBVH.AddObject(nAda, newOb, ref box, boxSAH);
         }
@@ -257,6 +264,9 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
+
+
+
         /// <summary>
         /// initializes a BVH with a given nodeAdaptor, and object list.
         /// </summary>
@@ -271,7 +281,7 @@ namespace SimpleScene.Util.ssBVH
 
             this.nAda = nodeAdaptor;
 
-            this.dataBuckets = new NativeBuffer<NativeBuffer<T>>(10, Allocator.Persistent);
+            this.dataBuckets = new NativeBuffer<NativeBuffer<T>>(MaxBuckets, Allocator.Persistent);
 
             //this.nodes = new NativeBuffer<Node2<T>>(100, Allocator.Persistent);
 
@@ -298,7 +308,7 @@ namespace SimpleScene.Util.ssBVH
             //}
             //else
             //{
-                rootBVH = new Node<T>(this);
+                rootBVH = Node.CreateNode(this);
   
                 //rootBVH.Items = new List<T>(); // it's a leaf, so give it an empty object list
             //}

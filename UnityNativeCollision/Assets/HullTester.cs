@@ -283,7 +283,7 @@ public class HullTester : MonoBehaviour
 
         var mappedNode = _bvh.nAda.getLeaf(test);
 
-        var bucket = _bvh.FindBucket(mappedNode.ItemIndex);
+        var bucket = _bvh.GetBucket(mappedNode.ItemIndex);
 
         _bvh.CheckForChanges();
         _bvh.optimize();
