@@ -95,6 +95,11 @@ namespace Vella.Common
             }
         }
 
+        public unsafe U* GetItemPtr<U>(int index) where U : unmanaged
+        {
+            return _buffer.AsPtr<U>(index);
+        }
+
         public int Capacity => _buffer.Length;
 
         public int Length => _maxIndex + 1;
@@ -294,6 +299,11 @@ namespace Vella.Common
         public unsafe ref T AsRef<T>(int index) where T : struct
         {
             return ref UnsafeUtilityEx.AsRef<T>((void*)((IntPtr)m_Buffer + (UnsafeUtility.SizeOf<T>() * index)));
+        }
+
+        public unsafe T* AsPtr<T>(int index) where T : unmanaged
+        {
+            return (T*)((IntPtr)m_Buffer + UnsafeUtility.SizeOf<T>() * index);
         }
 
         public unsafe void SetItem<T>(int index, T value)

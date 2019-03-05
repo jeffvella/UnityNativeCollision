@@ -54,7 +54,7 @@ public class TestShapeNodeAdapter : IBVHNodeAdapter<TestShape>
 
     public void mapObjectToBVHLeaf(TestShape sphere, Node leaf)
     {
-        map[sphere] = leaf;
+        map[sphere] = leaf; // map stores a copy
     }
 
     public Node getLeaf(TestShape sphere)

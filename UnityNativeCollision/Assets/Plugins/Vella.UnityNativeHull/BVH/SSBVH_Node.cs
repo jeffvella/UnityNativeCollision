@@ -26,7 +26,7 @@ using System.Text;
 using System.Diagnostics;
 using Unity.Mathematics;
 using Vella.Common;
-
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace SimpleScene.Util.ssBVH
 {
@@ -56,15 +56,23 @@ namespace SimpleScene.Util.ssBVH
     //}
 
     [DebuggerDisplay("Node<{0}>:{1}")]
-    public unsafe class Node
+    public unsafe struct Node // : IEquatable<Node>
     {
+        public bool IsValid => (IntPtr)ThisPtr != IntPtr.Zero;
+
+        public Node* ThisPtr; // => (Node*)UnsafeUtility.AddressOf(ref this);
+
         public SSAABB box;
 
         public int ItemIndex;
 
-        public Node parent;
-        public Node left;
-        public Node right;
+        public Node* left;
+        public Node* right;
+        public Node* parent;      
+
+        //public Node Dereference(Node* ptr) => *ptr;
+
+        public ref Node AsRef() => ref *ThisPtr;
 
         public int depth;
         public int nodeNumber; // for debugging
@@ -73,6 +81,11 @@ namespace SimpleScene.Util.ssBVH
         public int leftIndex;
         public int rightIndex;
         public int selfIndex;
+
+        //public bool Equals(Node other)
+        //{
+        //    return Ptr == parent.Ptr;
+        //}
 
 
         //public ref Node2<T> GetParent(IBVHNodeAdapter<T> nAda) => nAda.FindNode(parentIndex);
@@ -129,7 +142,7 @@ namespace SimpleScene.Util.ssBVH
                 // add our parent to the optimize list...
                 if (parent != null)
                 {
-                    nAda.BVH.refitNodes.Add(parent);
+                    nAda.BVH.refitNodes.Add(*parent);
 
                     // you can force an optimize every time something moves, but it's not very efficient
                     // instead we do this per-frame after a bunch of updates.
@@ -172,7 +185,7 @@ namespace SimpleScene.Util.ssBVH
 
             if (expanded && parent != null)
             {
-                parent.ChildExpanded(nAda, this);
+                parent->ChildExpanded(nAda, this);
             }
         }
 
@@ -188,12 +201,12 @@ namespace SimpleScene.Util.ssBVH
 
         public ref NativeBuffer<T> Bucket<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode
         {
-            return ref nAda.BVH.GetBucket(ItemIndex);
+            return ref nAda.BVH.GetBucketRef(ItemIndex);
         }
 
         internal void computeVolume<T>(IBVHNodeAdapter<T> nAda) where T : struct, IBVHNode
         {
-            ref var bucket = ref nAda.BVH.GetBucket(ItemIndex);
+            ref var bucket = ref nAda.BVH.GetBucketRef(ItemIndex);
             assignVolume(nAda.objectpos(bucket[0]), nAda.radius(bucket[0]));
             for (int i = 0; i < bucket.Length; i++)
             {
@@ -226,7 +239,7 @@ namespace SimpleScene.Util.ssBVH
             computeVolume(nAda);
             if (!box.Equals(oldbox))
             {
-                if (parent != null) parent.ChildRefit(nAda);
+                if (parent != null) parent->ChildRefit(nAda);
                 return true;
             }
             else
@@ -253,11 +266,11 @@ namespace SimpleScene.Util.ssBVH
             return 2.0f * ((x_size * y_size) + (x_size * z_size) + (y_size * z_size));
         }
 
-        internal static float SA(Node node)
+        internal static float SA(Node* node)
         {
-            float x_size = node.box.Max.x - node.box.Min.x;
-            float y_size = node.box.Max.y - node.box.Min.y;
-            float z_size = node.box.Max.z - node.box.Min.z;
+            float x_size = node->box.Max.x - node->box.Min.x;
+            float y_size = node->box.Max.y - node->box.Min.y;
+            float z_size = node->box.Max.z - node->box.Min.z;
 
             return 2.0f * ((x_size * y_size) + (x_size * z_size) + (y_size * z_size));
         }
@@ -269,10 +282,10 @@ namespace SimpleScene.Util.ssBVH
             return 6.0f * (size * size);
         }
 
-        internal static SSAABB AABBofPair(Node nodea, Node nodeb)
+        internal static SSAABB AABBofPair(Node* nodea, Node* nodeb)
         {
-            SSAABB box = nodea.box;
-            box.ExpandToFit(nodeb.box);
+            SSAABB box = nodea->box;
+            box.ExpandToFit(nodeb->box);
             return box;
         }
 
@@ -298,11 +311,11 @@ namespace SimpleScene.Util.ssBVH
             return box;
         }
 
-        internal float SAofList<T>(IBVHNodeAdapter<T> nAda, List<T> list) where T : struct, IBVHNode
+        internal static float SAofList<T>(IBVHNodeAdapter<T> nAda, List<T> list) where T : struct, IBVHNode
         {
             var box = AABBofOBJ(nAda, list[0]);
 
-            list.ToList<T>().GetRange(1, list.Count - 1).ForEach(obj => {
+            list.ToList().GetRange(1, list.Count - 1).ForEach(obj => {
                 var newbox = AABBofOBJ(nAda, obj);
                 box.ExpandBy(newbox);
             });
@@ -343,16 +356,16 @@ namespace SimpleScene.Util.ssBVH
         /// tryRotate looks at all candidate rotations, and executes the rotation with the best resulting SAH (if any)
         /// </summary>
         /// <param name="bvh"></param>
-        internal void tryRotate<T>(ssBVH<T> bvh) where T : struct, IBVHNode
+        internal static void tryRotate<T>(Node* node, ssBVH<T> bvh) where T : struct, IBVHNode
         {
             IBVHNodeAdapter<T> nAda = bvh.nAda;
 
             // if we are not a grandparent, then we can't rotate, so queue our parent and bail out
-            if (left.IsLeaf && right.IsLeaf)
+            if (node->left->IsLeaf && node->right->IsLeaf)
             {
-                if (parent != null)
+                if (node->parent != null)
                 {
-                    bvh.refitNodes.Add(parent);
+                    bvh.refitNodes.Add(*node->parent);
                     return;
                 }
             }
@@ -360,32 +373,33 @@ namespace SimpleScene.Util.ssBVH
             // for each rotation, check that there are grandchildren as necessary (aka not a leaf)
             // then compute total SAH cost of our branches after the rotation.
 
-            float mySA = SA(left) + SA(right);
+            float mySA = SA(node->left) + SA(node->right);
 
-            rotOpt bestRot = eachRot.Min((rot) => {
+            rotOpt bestRot = eachRot.Min((rot) => 
+            {
                 switch (rot)
                 {
                     case Rot.NONE: return new rotOpt(mySA, Rot.NONE);
                     // child to grandchild rotations
                     case Rot.L_RL:
-                        if (right.IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
-                        else return new rotOpt(SA(right.left) + SA(AABBofPair(left, right.right)), rot);
+                        if (node->right->IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
+                        else return new rotOpt(SA(node->right->left) + SA(AABBofPair(node->left, node->right->right)), rot);
                     case Rot.L_RR:
-                        if (right.IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
-                        else return new rotOpt(SA(right.right) + SA(AABBofPair(left, right.left)), rot);
+                        if (node->right->IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
+                        else return new rotOpt(SA(node->right->right) + SA(AABBofPair(node->left, node->right->left)), rot);
                     case Rot.R_LL:
-                        if (left.IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
-                        else return new rotOpt(SA(AABBofPair(right, left.right)) + SA(left.left), rot);
+                        if (node->left->IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
+                        else return new rotOpt(SA(AABBofPair(node->right, node->left->right)) + SA(node->left->left), rot);
                     case Rot.R_LR:
-                        if (left.IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
-                        else return new rotOpt(SA(AABBofPair(right, left.left)) + SA(left.right), rot);
+                        if (node->left->IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
+                        else return new rotOpt(SA(AABBofPair(node->right, node->left->left)) + SA(node->left->right), rot);
                     // grandchild to grandchild rotations
                     case Rot.LL_RR:
-                        if (left.IsLeaf || right.IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
-                        else return new rotOpt(SA(AABBofPair(right.right, left.right)) + SA(AABBofPair(right.left, left.left)), rot);
+                        if (node->left->IsLeaf || node->right->IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
+                        else return new rotOpt(SA(AABBofPair(node->right->right, node->left->right)) + SA(AABBofPair(node->right->left, node->left->left)), rot);
                     case Rot.LL_RL:
-                        if (left.IsLeaf || right.IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
-                        else return new rotOpt(SA(AABBofPair(right.left, left.right)) + SA(AABBofPair(left.left, right.right)), rot);
+                        if (node->left->IsLeaf || node->right->IsLeaf) return new rotOpt(float.MaxValue, Rot.NONE);
+                        else return new rotOpt(SA(AABBofPair(node->right->left, node->left->right)) + SA(AABBofPair(node->left->left, node->right->right)), rot);
                     // unknown...
                     default: throw new NotImplementedException("missing implementation for BVH Rotation SAH Computation .. " + rot.ToString());
                 }
@@ -395,19 +409,19 @@ namespace SimpleScene.Util.ssBVH
             if (bestRot.rot != Rot.NONE)
             {
                 // if the best rotation is no-rotation... we check our parents anyhow..                
-                if (parent != null)
+                if (node->parent != null)
                 {
                     // but only do it some random percentage of the time.
                     if ((DateTime.Now.Ticks % 100) < 2)
                     {
-                        bvh.refitNodes.Add(parent);
+                        bvh.refitNodes.Add(*node->parent);
                     }
                 }
             }
             else
             {
 
-                if (parent != null) { bvh.refitNodes.Add(parent); }
+                if (node->parent != null) { bvh.refitNodes.Add(*node->parent); }
 
                 if (((mySA - bestRot.SAH) / mySA) < 0.3f)
                 {
@@ -420,24 +434,67 @@ namespace SimpleScene.Util.ssBVH
                 //  2. update the depth (if child-to-grandchild)
                 //  3. update the parent pointers
                 //  4. refit the boundary box
-                Node swap = null;
+                Node* swap = null;
                 switch (bestRot.rot)
                 {
                     case Rot.NONE: break;
                     // child to grandchild rotations
-                    case Rot.L_RL: swap = left;
-                        left = right.left; left.parent = this;
-                        right.left = swap; swap.parent = right;
-                        right.ChildRefit(nAda, propagate: false);
+                    case Rot.L_RL:
+                        swap = node->left;
+                        node->left = node->right->left;
+                        node->left->parent = node;
+                        node->right->left = swap;
+                        swap->parent = node->right;
+                        node->right->ChildRefit(nAda, propagate: false);
                         break;
 
-                    case Rot.L_RR: swap = left; left = right.right; left.parent = this; right.right = swap; swap.parent = right; right.ChildRefit(nAda, propagate: false); break;
-                    case Rot.R_LL: swap = right; right = left.left; right.parent = this; left.left = swap; swap.parent = left; left.ChildRefit(nAda, propagate: false); break;
-                    case Rot.R_LR: swap = right; right = left.right; right.parent = this; left.right = swap; swap.parent = left; left.ChildRefit(nAda, propagate: false); break;
+                    case Rot.L_RR:
+                        swap = node->left;
+                        node->left = node->right->right;
+                        node->left->parent = node;
+                        node->right->right = swap;
+                        swap->parent = node->right;
+                        node->right->ChildRefit(nAda, propagate: false);
+                        break;
+
+                    case Rot.R_LL:
+                        swap = node->right;
+                        node->right = node->left->left;
+                        node->right->parent = node;
+                        node->left->left = swap;
+                        swap->parent = node->left;
+                        node->left->ChildRefit(nAda, propagate: false);
+                        break;
+
+                    case Rot.R_LR:
+                        swap = node->right;
+                        node->right = node->left->right;
+                        node->right->parent = node;
+                        node->left->right = swap;
+                        swap->parent = node->left;
+                        node->left->ChildRefit(nAda, propagate: false);
+                        break;
 
                     // grandchild to grandchild rotations
-                    case Rot.LL_RR: swap = left.left; left.left = right.right; right.right = swap; left.left.parent = left; swap.parent = right; left.ChildRefit(nAda, propagate: false); right.ChildRefit(nAda, propagate: false); break;
-                    case Rot.LL_RL: swap = left.left; left.left = right.left; right.left = swap; left.left.parent = left; swap.parent = right; left.ChildRefit(nAda, propagate: false); right.ChildRefit(nAda, propagate: false); break;
+                    case Rot.LL_RR:
+                        swap = node->left->left;
+                        node->left->left = node->right->right;
+                        node->right->right = swap;
+                        node->left->left->parent = node->left;
+                        swap->parent = node->right;
+                        node->left->ChildRefit(nAda, propagate: false);
+                        node->right->ChildRefit(nAda, propagate: false);
+                        break;
+
+                    case Rot.LL_RL:
+                        swap = node->left->left;
+                        node->left->left = node->right->left;
+                        node->right->left = swap;
+                        node->left->left->parent = node->left;
+                        swap->parent = node->right;
+                        node->left->ChildRefit(nAda, propagate: false);
+                        node->right->ChildRefit(nAda, propagate: false);
+                        break;
 
                     // unknown...
                     default: throw new NotImplementedException("missing implementation for BVH Rotation .. " + bestRot.rot.ToString());
@@ -450,7 +507,7 @@ namespace SimpleScene.Util.ssBVH
                     case Rot.L_RR:
                     case Rot.R_LL:
                     case Rot.R_LR:
-                        this.SetDepth(nAda, this.depth);
+                        node->SetDepth(nAda, node->depth);
                         break;
                 }
             }
@@ -524,6 +581,7 @@ namespace SimpleScene.Util.ssBVH
                 var right_s = orderedlist.GetRange(center, splitlist.Count - center);
 
                 float SAH = SAofList(adapter, left_s) * left_s.Count + SAofList(adapter, right_s) * right_s.Count;
+
                 return new SplitAxisOpt<T>(SAH, axis, left_s, right_s);
             });
 
@@ -531,8 +589,8 @@ namespace SimpleScene.Util.ssBVH
             var newLeftIndex = ItemIndex;
             var newRightIndex = adapter.BVH.CreateBucket();
 
-            this.left = Node.CreateNode<T>(adapter.BVH, this, bestSplit.left, bestSplit.axis, this.depth + 1, newLeftIndex); // Split the Hierarchy to the left
-            this.right = Node.CreateNode<T>(adapter.BVH, this, bestSplit.right, bestSplit.axis, this.depth + 1, newRightIndex); // Split the Hierarchy to the right      
+            this.left = CreateNode<T>(adapter.BVH, ThisPtr, bestSplit.left, bestSplit.axis, depth + 1, newLeftIndex); // Split the Hierarchy to the left
+            this.right = CreateNode<T>(adapter.BVH, ThisPtr, bestSplit.right, bestSplit.axis, depth + 1, newRightIndex); // Split the Hierarchy to the right      
 
             //Items = null;
             ItemIndex = -1;
@@ -549,26 +607,26 @@ namespace SimpleScene.Util.ssBVH
 
         internal void AddObject<T>(IBVHNodeAdapter<T> nAda, T newOb, ref SSAABB newObBox, float newObSAH) where T : struct, IBVHNode
         {
-            AddObject(nAda, this, newOb, ref newObBox, newObSAH);
+            AddObject(nAda, ThisPtr, newOb, ref newObBox, newObSAH);
         }
 
-        internal static void AddObject<T>(IBVHNodeAdapter<T> nAda, Node curNode, T newOb, ref SSAABB newObBox, float newObSAH) where T : struct, IBVHNode
+        internal static void AddObject<T>(IBVHNodeAdapter<T> nAda, Node* curNode, T newOb, ref SSAABB newObBox, float newObSAH) where T : struct, IBVHNode
         {
             // 1. first we traverse the node looking for the best leaf
-            while (curNode.ItemIndex == -1)
+            while (curNode->ItemIndex == -1)
             {
                 // find the best way to add this object.. 3 options..
                 // 1. send to left node  (L+N,R)
                 // 2. send to right node (L,R+N)
                 // 3. merge and pushdown left-and-right node (L+R,N)
 
-                var left = curNode.left;
-                var right = curNode.right;
+                var left = curNode->left;
+                var right = curNode->right;
 
                 float leftSAH = SA(left);
                 float rightSAH = SA(right);
-                float sendLeftSAH = rightSAH + SA(left.box.ExpandedBy(newObBox));    // (L+N,R)
-                float sendRightSAH = leftSAH + SA(right.box.ExpandedBy(newObBox));   // (L,R+N)
+                float sendLeftSAH = rightSAH + SA(left->box.ExpandedBy(newObBox));    // (L+N,R)
+                float sendRightSAH = leftSAH + SA(right->box.ExpandedBy(newObBox));   // (L,R+N)
                 float mergedLeftAndRightSAH = SA(AABBofPair(left, right)) + newObSAH; // (L+R,N)
 
                 // Doing a merge-and-pushdown can be expensive, so we only do it if it's notably better
@@ -595,61 +653,61 @@ namespace SimpleScene.Util.ssBVH
             // 2. then we add the object and map it to our leaf
             //curNode.Items.Add(newOb);
 
-            ref var bucket = ref curNode.Bucket(nAda);
+            ref var bucket = ref curNode->Bucket(nAda);
             bucket.Add(newOb);
 
-            nAda.mapObjectToBVHLeaf(newOb, curNode);
+            nAda.mapObjectToBVHLeaf(newOb, *curNode);
 
-            curNode.refitVolume(nAda);
+            curNode->refitVolume(nAda);
             // split if necessary...
-            curNode.splitIfNecessary(nAda);
+            curNode->splitIfNecessary(nAda);
         }
 
 
-        internal static void AddObject_Pushdown<T>(IBVHNodeAdapter<T> nAda, Node curNode, T newOb) where T : struct, IBVHNode
+        internal static void AddObject_Pushdown<T>(IBVHNodeAdapter<T> nAda, Node* curNode, T newOb) where T : struct, IBVHNode
         {
-            var left = curNode.left;
-            var right = curNode.right;
+            var left = curNode->left;
+            var right = curNode->right;
 
             // merge and pushdown left and right as a new node..
             var mergedSubnode = Node.CreateNode<T>(nAda.BVH);
-            mergedSubnode.left = left;
-            mergedSubnode.right = right;
-            mergedSubnode.parent = curNode;
+            mergedSubnode->left = left;
+            mergedSubnode->right = right;
+            mergedSubnode->parent = curNode;
             //mergedSubnode.Items = null; // we need to be an interior node... so null out our object list..
-            mergedSubnode.ItemIndex = -1;
+            mergedSubnode->ItemIndex = -1;
 
-            left.parent = mergedSubnode;
-            right.parent = mergedSubnode;
-            mergedSubnode.ChildRefit(nAda, propagate: false);
+            left->parent = mergedSubnode;
+            right->parent = mergedSubnode;
+            mergedSubnode->ChildRefit(nAda, propagate: false);
 
             // make new subnode for obj
             var newSubnode = Node.CreateNode<T>(nAda.BVH);
-            newSubnode.parent = curNode;
+            newSubnode->parent = curNode;
 
-            if(mergedSubnode.ItemIndex > 0)
+            if(mergedSubnode->ItemIndex > 0)
             {
-                newSubnode.ItemIndex = mergedSubnode.ItemIndex;
-                mergedSubnode.ItemIndex = -1;
+                newSubnode->ItemIndex = mergedSubnode->ItemIndex;
+                mergedSubnode->ItemIndex = -1;
             }
             else
             {
                 var bucketIndex = nAda.BVH.CreateBucket();                
-                newSubnode.ItemIndex = bucketIndex;
-                mergedSubnode.ItemIndex = -1;
+                newSubnode->ItemIndex = bucketIndex;
+                mergedSubnode->ItemIndex = -1;
             }
-            ref var bucket = ref nAda.BVH.GetBucket(newSubnode.ItemIndex);
+            ref var bucket = ref nAda.BVH.GetBucketRef(newSubnode->ItemIndex);
             bucket.Add(newOb);
 
             //newSubnode.Items = new List<T> { newOb };
-            nAda.mapObjectToBVHLeaf(newOb, newSubnode);
-            newSubnode.computeVolume(nAda);
+            nAda.mapObjectToBVHLeaf(newOb, *newSubnode);
+            newSubnode->computeVolume(nAda);
 
             // make assignments..
-            curNode.left = mergedSubnode;
-            curNode.right = newSubnode;
-            curNode.SetDepth(nAda, curNode.depth); // propagate new depths to our children.
-            curNode.ChildRefit(nAda);
+            curNode->left = mergedSubnode;
+            curNode->right = newSubnode;
+            curNode->SetDepth(nAda, curNode->depth); // propagate new depths to our children.
+            curNode->ChildRefit(nAda);
         }
 
         internal int CountBVHNodes()
@@ -660,7 +718,7 @@ namespace SimpleScene.Util.ssBVH
             }
             else
             {
-                return left.CountBVHNodes() + right.CountBVHNodes();
+                return left->CountBVHNodes() + right->CountBVHNodes();
             }
         }
 
@@ -687,7 +745,7 @@ namespace SimpleScene.Util.ssBVH
                 {
                     ItemIndex = -1;
                     //Items = null;
-                    parent.RemoveLeaf(adapter, this);
+                    parent->RemoveLeaf(adapter, ThisPtr);
                     parent = null;
                 }
             }
@@ -702,16 +760,16 @@ namespace SimpleScene.Util.ssBVH
             }
             if (ItemIndex != -1)
             {
-                left.SetDepth(nAda, newdepth + 1);
-                right.SetDepth(nAda, newdepth + 1);
+                left->SetDepth(nAda, newdepth + 1);
+                right->SetDepth(nAda, newdepth + 1);
             }
         }
 
-        internal void RemoveLeaf<T>(IBVHNodeAdapter<T> nAda, Node removeLeaf) where T : struct, IBVHNode
+        internal void RemoveLeaf<T>(IBVHNodeAdapter<T> nAda, Node* removeLeaf) where T : struct, IBVHNode
         {
             if (left == null || right == null) { throw new Exception("bad intermediate node"); }
 
-            Node keepLeaf;
+            Node* keepLeaf;
 
             if (removeLeaf == left)
             {
@@ -727,13 +785,13 @@ namespace SimpleScene.Util.ssBVH
             }
 
             // "become" the leaf we are keeping.
-            box = keepLeaf.box;
-            left = keepLeaf.left;
-            right = keepLeaf.right;
+            box = keepLeaf->box;
+            left = keepLeaf->left;
+            right = keepLeaf->right;
 
             //Items = keepLeaf.Items;
 
-            ItemIndex = keepLeaf.ItemIndex;
+            ItemIndex = keepLeaf->ItemIndex;
             ref var keepItems = ref Bucket(nAda);
 
             //foreach(item in keepLeaf.ItemIndex)
@@ -743,7 +801,9 @@ namespace SimpleScene.Util.ssBVH
 
             if (ItemIndex != -1)
             {
-                left.parent = this; right.parent = this;  // reassign child parents..
+                left->parent = ThisPtr;
+                right->parent = ThisPtr;  // reassign child parents..
+
                 this.SetDepth(nAda, this.depth); // this reassigns depth for our children
             }
             else
@@ -759,14 +819,17 @@ namespace SimpleScene.Util.ssBVH
             // propagate our new volume..
             if (parent != null)
             {
-                parent.ChildRefit(nAda);
+                parent->ChildRefit(nAda);
             }
         }
 
         internal Node rootNode()
         {
             Node cur = this;
-            while (cur.parent != null) { cur = cur.parent; }
+            while (cur.parent != null)
+            {
+                cur = *cur.parent;
+            }
             return cur;
         }
 
@@ -781,8 +844,8 @@ namespace SimpleScene.Util.ssBVH
                 }
                 else
                 {
-                    left.FindOverlappingLeaves(nAda, origin, radius, overlapList);
-                    right.FindOverlappingLeaves(nAda, origin, radius, overlapList);
+                    left->FindOverlappingLeaves(nAda, origin, radius, overlapList);
+                    right->FindOverlappingLeaves(nAda, origin, radius, overlapList);
                 }
             }
         }
@@ -797,8 +860,8 @@ namespace SimpleScene.Util.ssBVH
                 }
                 else
                 {
-                    left.FindOverlappingLeaves(nAda, aabb, overlapList);
-                    right.FindOverlappingLeaves(nAda, aabb, overlapList);
+                    left->FindOverlappingLeaves(nAda, aabb, overlapList);
+                    right->FindOverlappingLeaves(nAda, aabb, overlapList);
                 }
             }
         }
@@ -846,54 +909,55 @@ namespace SimpleScene.Util.ssBVH
 
             if (expanded && parent != null)
             {
-                parent.ChildExpanded(nAda, this);
+                parent->ChildExpanded(nAda, this);
             }
         }
 
         internal void ChildRefit<T>(IBVHNodeAdapter<T> nAda, bool propagate = true) where T : struct, IBVHNode
         {
-            ChildRefit(nAda, this, propagate: propagate);
+            ChildRefit(nAda, ThisPtr, propagate: propagate);
         }
 
-        internal static void ChildRefit<T>(IBVHNodeAdapter<T> nAda, Node curNode, bool propagate = true) where T : struct, IBVHNode
+        internal static void ChildRefit<T>(IBVHNodeAdapter<T> nAda, Node* curNode, bool propagate = true) where T : struct, IBVHNode
         {
             do
             {
-                SSAABB oldbox = curNode.box;
-                Node left = curNode.left;
-                Node right = curNode.right;
+                SSAABB oldbox = curNode->box;
+                Node* left = curNode->left;
+                Node* right = curNode->right;
 
                 // start with the left box
-                SSAABB newBox = left.box;
+                SSAABB newBox = left->box;
 
                 // expand any dimension bigger in the right node
-                if (right.box.Min.x < newBox.Min.x) { newBox.Min.x = right.box.Min.x; }
-                if (right.box.Min.y < newBox.Min.y) { newBox.Min.y = right.box.Min.y; }
-                if (right.box.Min.z < newBox.Min.z) { newBox.Min.z = right.box.Min.z; }
+                if (right->box.Min.x < newBox.Min.x) { newBox.Min.x = right->box.Min.x; }
+                if (right->box.Min.y < newBox.Min.y) { newBox.Min.y = right->box.Min.y; }
+                if (right->box.Min.z < newBox.Min.z) { newBox.Min.z = right->box.Min.z; }
 
-                if (right.box.Max.x > newBox.Max.x) { newBox.Max.x = right.box.Max.x; }
-                if (right.box.Max.y > newBox.Max.y) { newBox.Max.y = right.box.Max.y; }
-                if (right.box.Max.z > newBox.Max.z) { newBox.Max.z = right.box.Max.z; }
+                if (right->box.Max.x > newBox.Max.x) { newBox.Max.x = right->box.Max.x; }
+                if (right->box.Max.y > newBox.Max.y) { newBox.Max.y = right->box.Max.y; }
+                if (right->box.Max.z > newBox.Max.z) { newBox.Max.z = right->box.Max.z; }
 
                 // now set our box to the newly created box
-                curNode.box = newBox;
+                curNode->box = newBox;
 
                 // and walk up the tree
-                curNode = curNode.parent;
+                curNode = curNode->parent;
             } while (propagate && curNode != null);
         }
 
-        internal Node()
-        {
+        //internal Node()
+        //{
 
-        }
+        //}
 
-        internal static Node CreateNode<T>(ssBVH<T> bvh) where T : struct, IBVHNode
+        internal static Node* CreateNode<T>(ssBVH<T> bvh) where T : struct, IBVHNode
             //internal Node(ssBVH<T> bvh)
         {
-            var node = new Node();
-            node.ItemIndex = bvh.CreateBucket();
-            node.nodeNumber = bvh.nodeCount++;
+            //var node = new Node();
+            Node* node = bvh.CreateNode();
+            node->ItemIndex = bvh.CreateBucket();
+            node->nodeNumber = bvh.nodeCount++;
 
             //ItemIndex =      
             //Items = new List<T>();
@@ -904,7 +968,7 @@ namespace SimpleScene.Util.ssBVH
             return node;
         }
 
-        internal static Node CreateNode<T>(ssBVH<T> bvh, List<T> gobjectlist) where T : struct, IBVHNode
+        internal static Node* CreateNode<T>(ssBVH<T> bvh, List<T> gobjectlist) where T : struct, IBVHNode
         {
             return Node.CreateNode<T>(bvh, null, gobjectlist, Axis.X, 0);
         }
@@ -913,14 +977,14 @@ namespace SimpleScene.Util.ssBVH
 
         //}
 
-        internal static Node CreateNode<T>(ssBVH<T> bvh, Node lparent, List<T> gobjectlist, Axis lastSplitAxis, int curdepth, int bucketIndex = -1) where T : struct, IBVHNode
+        internal static Node* CreateNode<T>(ssBVH<T> bvh, Node* lparent, List<T> gobjectlist, Axis lastSplitAxis, int curdepth, int bucketIndex = -1) where T : struct, IBVHNode
         //private Node(ssBVH<T> bvh, Node<T> lparent, List<T> gobjectlist, Axis lastSplitAxis, int curdepth, int bucketIndex = -1)
         {
-            var node = new Node();
+            Node* node = bvh.CreateNode();
             IBVHNodeAdapter<T> nAda = bvh.nAda;
-            node.nodeNumber = bvh.nodeCount++;
-            node.parent = lparent; // save off the parent BVHGObj Node
-            node.depth = curdepth;
+            node->nodeNumber = bvh.nodeCount++;
+            node->parent = lparent; // save off the parent BVHGObj Node
+            node->depth = curdepth;
 
             if (bvh.maxDepth < curdepth)
             {
@@ -938,25 +1002,25 @@ namespace SimpleScene.Util.ssBVH
             if (bucketIndex < 0)
             {
                 // new bucket
-                node.ItemIndex = bvh.CreateBucket();
-                ref var bucket = ref bvh.GetBucket(node.ItemIndex);
+                node->ItemIndex = bvh.CreateBucket();
+                ref var bucket = ref bvh.GetBucketRef(node->ItemIndex);
 
                 for (int i = 0; i < gobjectlist.Count; i++)
                 {                    
                     bucket.Add(gobjectlist[i]);
-                    nAda.mapObjectToBVHLeaf(gobjectlist[i], node);
+                    nAda.mapObjectToBVHLeaf(gobjectlist[i], *node);
                 }
             }
             else
             {
-                node.ItemIndex = bucketIndex;
-                ref var bucket = ref bvh.GetBucket(node.ItemIndex);
+                node->ItemIndex = bucketIndex;
+                ref var bucket = ref bvh.GetBucketRef(node->ItemIndex);
                 bucket.Clear();
 
                 for (int i = 0; i < gobjectlist.Count; i++)
                 {
                     bucket.Add(gobjectlist[i]);
-                    nAda.mapObjectToBVHLeaf(gobjectlist[i], node);
+                    nAda.mapObjectToBVHLeaf(gobjectlist[i], *node);
                 }
             }
 
@@ -965,15 +1029,15 @@ namespace SimpleScene.Util.ssBVH
             if (gobjectlist.Count <= bvh.LEAF_OBJ_MAX)
             {
                 // once we reach the leaf node, we must set prev/next to null to signify the end
-                node.left = null;
-                node.right = null;
+                node->left = null;
+                node->right = null;
                 // at the leaf node we store the remaining objects, so initialize a list
                 //Items = gobjectlist;
 
                 //Items.ForEach(o => nAda.mapObjectToBVHLeaf(o, this));
 
-                node.computeVolume(nAda);
-                node.splitIfNecessary(nAda);
+                node->computeVolume(nAda);
+                node->splitIfNecessary(nAda);
             }
             else
             {
@@ -981,13 +1045,14 @@ namespace SimpleScene.Util.ssBVH
                 // if we have more than (bvh.LEAF_OBJECT_COUNT) objects, then compute the volume and split
                 //Items = gobjectlist;
 
-                node.computeVolume(nAda);
-                node.splitNode(nAda);
-                node.ChildRefit(nAda, propagate: false);
+                node->computeVolume(nAda);
+                node->splitNode(nAda);
+                node->ChildRefit(nAda, propagate: false);
             }
 
             return node;
         }
+
 
     }
 }

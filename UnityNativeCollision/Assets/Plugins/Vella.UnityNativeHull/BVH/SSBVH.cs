@@ -59,8 +59,9 @@ namespace SimpleScene.Util.ssBVH
     {
         public const int MaxBuckets = 10;
         public const int MaxItemsPerBucket = 10;
+        public const int MaxNodes = 100;
 
-        public Node rootBVH;
+        public Node* rootBVH;
 
         //public Node* rootBVHPtr;
 
@@ -71,6 +72,8 @@ namespace SimpleScene.Util.ssBVH
         // Heap array of pointers to other scattered heap arrays.
         public NativeBuffer<NativeBuffer<T>> dataBuckets;
 
+        public NativeBuffer<Node> Nodes;
+
         //public NativeBuffer<Node2<T>> nodes;
 
         public readonly int LEAF_OBJ_MAX;
@@ -78,24 +81,27 @@ namespace SimpleScene.Util.ssBVH
         public int nodeCount = 0;
         public int maxDepth = 0;
 
-        public ref NativeBuffer<T> GetBucket(int index)
+        public ref NativeBuffer<T> GetBucketRef(int index)
         {
             return ref dataBuckets[index];
         }
 
-        public ref NativeBuffer<T> GetBucket(Node node)
+        public ref NativeBuffer<T> GetBucketRef(Node node)
         {
             return ref dataBuckets[node.ItemIndex];
         }
 
-        //public ref Node2<T> GetNode(int index)
-        //{
-        //    return ref nodes[index];
-        //}
-
         public int CreateBucket()
         {
             return dataBuckets.Add(new NativeBuffer<T>(MaxItemsPerBucket, Allocator.Persistent));
+        }
+
+        public Node* CreateNode()
+        {
+            var index = Nodes.Add(new Node());
+            var node = Nodes.GetItemPtr<Node>(index);           
+            node->ThisPtr = node;
+            return node;
         }
 
         public HashSet<Node> refitNodes = new HashSet<Node>();
@@ -105,40 +111,67 @@ namespace SimpleScene.Util.ssBVH
         // internal functional traversal...
         private void _traverse(Node curNode, NodeTest hitTest, List<Node> hitlist)
         {
-            if (curNode == null) { return; }
+            if (!curNode.IsValid) // not sure about this traverse end.
+            {
+                return;
+            }
+
             if (hitTest(curNode.box))
             {
                 hitlist.Add(curNode);
 
-                _traverse(curNode.left, hitTest, hitlist);
-                _traverse(curNode.right, hitTest, hitlist);
+                if (curNode.left != null)
+                {
+                    _traverse(*curNode.left, hitTest, hitlist);
+                }
+                if (curNode.right != null)
+                {
+                    _traverse(*curNode.right, hitTest, hitlist);
+                }
             }
         }
 
         private void _traverse(Node curNode, Func<Node,bool> hitTest, List<Node> hitlist)
         {
-            if (curNode == null || hitTest == null) { return; }
+            if (!curNode.IsValid || hitTest == null)
+            {
+                return;
+            }
+
             if (hitTest.Invoke(curNode))
             {
                 hitlist.Add(curNode);
-                _traverse(curNode.left, hitTest, hitlist);
-                _traverse(curNode.right, hitTest, hitlist);
+
+                if (curNode.left != null)
+                {
+                    _traverse(*curNode.left, hitTest, hitlist);
+                }
+                if (curNode.right != null)
+                {
+                    _traverse(*curNode.right, hitTest, hitlist);
+                }
             }
         }
 
         // public interface to traversal..
         public List<Node> Traverse(NodeTest hitTest)
         {
+            if (rootBVH == null)
+                throw new InvalidOperationException("rootnode null pointer");
+
             var hits = new List<Node>();
-            this._traverse(rootBVH, hitTest, hits);
+            this._traverse(*rootBVH, hitTest, hits);
             return hits;
         }
 
 
         public List<Node> TraverseNode(Func<Node, bool> hitTest)
         {
+            if (rootBVH == null)
+                throw new InvalidOperationException("rootnode null pointer");
+
             var hits = new List<Node>();
-            this._traverse(rootBVH, hitTest, hits);
+            this._traverse(*rootBVH, hitTest, hits);
             return hits;
         }
 
@@ -179,54 +212,53 @@ namespace SimpleScene.Util.ssBVH
             while (refitNodes.Count > 0)
             {
                 int maxdepth = refitNodes.Max(n => n.depth);
-
                 var sweepNodes = refitNodes.Where(n => n.depth == maxdepth).ToList();
                 sweepNodes.ForEach(n => refitNodes.Remove(n));
-                sweepNodes.ForEach(n => n.tryRotate(this));
+                sweepNodes.ForEach(n => Node.tryRotate(n.ThisPtr, this));
             }
         }
 
-        public void CheckForChanges()
-        {
-            TraverseForChanges(rootBVH);
-        }
+        //public void CheckForChanges()
+        //{
+        //    TraverseForChanges(rootBVH);
+        //}
 
-        private void TraverseForChanges(Node curNode)
-        {
-            // object driven update alternative is to have an event T, which is registered in IBVHNodeAdapter.mapObjectToBVHLeaf(), 
-            // and when triggered should checkForChanges/ add itself to Refit_ObjectChanged().
+        //private void TraverseForChanges(Node curNode)
+        //{
+        //    // object driven update alternative is to have an event T, which is registered in IBVHNodeAdapter.mapObjectToBVHLeaf(), 
+        //    // and when triggered should checkForChanges/ add itself to Refit_ObjectChanged().
 
-            if (curNode == null)
-                return;
+        //    if (curNode == null)
+        //        return;
             
-            //if(curNode.Items?.Count > 0)
-            //{
-            //    for (int i = 0; i < curNode.Items.Count; i++)
-            //    {
-            //        var item = curNode.Items[0];
-            //        nAda.checkForChanges(ref item);
-            //    }
-            //}
+        //    //if(curNode.Items?.Count > 0)
+        //    //{
+        //    //    for (int i = 0; i < curNode.Items.Count; i++)
+        //    //    {
+        //    //        var item = curNode.Items[0];
+        //    //        nAda.checkForChanges(ref item);
+        //    //    }
+        //    //}
 
 
-            //ref var bucket = ref FindBucket(curNode);
-            //foreach(var item in bucket)
-            //{
-            //    nAda.checkForChanges(item);
-            //}
+        //    //ref var bucket = ref FindBucket(curNode);
+        //    //foreach(var item in bucket)
+        //    //{
+        //    //    nAda.checkForChanges(item);
+        //    //}
 
-            //if (curNode.Items?.Count > 0)
-            //{
-            //    for (int i = 0; i < curNode.Items.Count; i++)
-            //    {
-            //        var item = curNode.Items[0];
-            //        nAda.checkForChanges(ref item);
-            //    }
-            //}
+        //    //if (curNode.Items?.Count > 0)
+        //    //{
+        //    //    for (int i = 0; i < curNode.Items.Count; i++)
+        //    //    {
+        //    //        var item = curNode.Items[0];
+        //    //        nAda.checkForChanges(ref item);
+        //    //    }
+        //    //}
 
-            TraverseForChanges(curNode.left);
-            TraverseForChanges(curNode.right);            
-        }
+        //    TraverseForChanges(curNode.left);
+        //    TraverseForChanges(curNode.right);            
+        //}
 
 
         public void addObject(T newOb)
@@ -235,7 +267,7 @@ namespace SimpleScene.Util.ssBVH
 
             float boxSAH = Node.SA(ref box);
 
-            rootBVH.AddObject(nAda, newOb, ref box, boxSAH);
+            rootBVH->AddObject(nAda, newOb, ref box, boxSAH);
         }
 
         public void removeObject(T newObj)
@@ -246,7 +278,7 @@ namespace SimpleScene.Util.ssBVH
 
         public int countBVHNodes()
         {
-            return rootBVH.CountBVHNodes();
+            return rootBVH->CountBVHNodes();
         }
 
         public void Dispose()
@@ -283,6 +315,8 @@ namespace SimpleScene.Util.ssBVH
 
             this.dataBuckets = new NativeBuffer<NativeBuffer<T>>(MaxBuckets, Allocator.Persistent);
 
+            this.Nodes = new NativeBuffer<Node>(MaxNodes, Allocator.Persistent);
+
             //this.nodes = new NativeBuffer<Node2<T>>(100, Allocator.Persistent);
 
             //var root = new NativeBuffer<T>(10, Allocator.Persistent);
@@ -308,7 +342,7 @@ namespace SimpleScene.Util.ssBVH
             //}
             //else
             //{
-                rootBVH = Node.CreateNode(this);
+            rootBVH = Node.CreateNode(this);
   
                 //rootBVH.Items = new List<T>(); // it's a leaf, so give it an empty object list
             //}
