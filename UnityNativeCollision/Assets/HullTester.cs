@@ -40,8 +40,13 @@ public class HullTester : MonoBehaviour
 
     unsafe void Update()
     {
-        HandleTransformChanged();
+        //if (_bvh == null)
+        //{
+        //    _bvh = new TestShapeBVH();
+        //}
 
+        HandleTransformChanged();
+        
         foreach (var transform in Transforms)
         {
             var id = transform.GetInstanceID();
@@ -268,6 +273,11 @@ public class HullTester : MonoBehaviour
         {
             EnsureDestroyed();
 
+            if (_bvh != null)
+            {
+                _bvh.Dispose();   
+            }
+
             _bvh = new TestShapeBVH();
 
             Hulls = Transforms.Where(t => t != null).ToDictionary(k => k.GetInstanceID(), t => CreateShape(t));
@@ -281,7 +291,7 @@ public class HullTester : MonoBehaviour
 
         var test = Hulls.First().Value;
 
-        var mappedNode = _bvh.nAda.getLeaf(test);
+        var mappedNode = _bvh.adapter.getLeaf(test);
 
         var bucket = _bvh.GetBucketRef(mappedNode.ItemIndex);
 

@@ -297,7 +297,7 @@ namespace Vella.Common
         }
 
         public unsafe ref T AsRef<T>(int index) where T : struct
-        {
+        {     
             return ref UnsafeUtilityEx.AsRef<T>((void*)((IntPtr)m_Buffer + (UnsafeUtility.SizeOf<T>() * index)));
         }
 

@@ -34,11 +34,15 @@ namespace SimpleScene.Util.ssBVH
         X, Y, Z,
     }
 
-    public interface IBVHNodeAdapter<T> where T : struct, IBVHNode
+    public interface IBVHNodeAdapter<T> : IDisposable where T : struct, IBVHNode 
     {
-        ssBVH<T> BVH { get; }
+        void Allocate(NativeBoundingHierarchy<T> bvh);
 
-        void setBVH(ssBVH<T> bvh);
+        NativeBoundingHierarchy<T> BVH { get; }
+
+        bool IsCreated { get; }
+
+        //void setBVH(NativeBoundingHierarchy<T> bvh);
 
         float3 objectpos(T obj);
 
@@ -55,17 +59,20 @@ namespace SimpleScene.Util.ssBVH
         Node getLeaf(T obj);
     }
 
-    public unsafe class ssBVH<T> : IDisposable where T : struct, IBVHNode
+    public unsafe class NativeBoundingHierarchy<T> : IDisposable where T : struct, IBVHNode
     {
         public const int MaxBuckets = 10;
         public const int MaxItemsPerBucket = 10;
         public const int MaxNodes = 100;
 
+        public int _isCreated;
+        public bool IsCreated => _isCreated == 1;
+
         public Node* rootBVH;
 
         //public Node* rootBVHPtr;
 
-        public IBVHNodeAdapter<T> nAda;
+        public IBVHNodeAdapter<T> adapter;
 
         //public NativeList<Node<T>> items = new NativeList<Node<T>>();
         
@@ -263,17 +270,17 @@ namespace SimpleScene.Util.ssBVH
 
         public void addObject(T newOb)
         {
-            SSAABB box = SSAABB.FromSphere(nAda.objectpos(newOb), nAda.radius(newOb));
+            SSAABB box = SSAABB.FromSphere(adapter.objectpos(newOb), adapter.radius(newOb));
 
             float boxSAH = Node.SA(ref box);
 
-            rootBVH->AddObject(nAda, newOb, ref box, boxSAH);
+            rootBVH->AddObject(adapter, newOb, ref box, boxSAH);
         }
 
         public void removeObject(T newObj)
         {
-            var leaf = nAda.getLeaf(newObj);
-            leaf.RemoveObject(nAda, newObj);
+            var leaf = adapter.getLeaf(newObj);
+            leaf.RemoveObject(adapter, newObj);
         }
 
         public int countBVHNodes()
@@ -283,39 +290,51 @@ namespace SimpleScene.Util.ssBVH
 
         public void Dispose()
         {
-            if(dataBuckets.IsCreated)
-            {
-                foreach (var item in dataBuckets)
+            if(IsCreated)
+            {    
+                if (dataBuckets.IsCreated)
                 {
-                    if (item.IsCreated)
+                    foreach (var item in dataBuckets)
                     {
-                        item.Dispose();
+                        if (item.IsCreated)
+                        {
+                            item.Dispose();
+                        }
                     }
+                    dataBuckets.Dispose();
                 }
-                dataBuckets.Dispose();
+                if(Nodes.IsCreated)
+                {
+                    Nodes.Dispose();
+                }
+                if (adapter.IsCreated)
+                {
+                    adapter.Dispose();
+                }           
             }
         }
-
-
-
 
         /// <summary>
         /// initializes a BVH with a given nodeAdaptor, and object list.
         /// </summary>
         /// <param name="nodeAdaptor"></param>
         /// <param name="objects"></param>
-        /// <param name="LEAF_OBJ_MAX">WARNING! currently this must be 1 to use dynamic BVH updates</param>
-        public ssBVH(IBVHNodeAdapter<T> nodeAdaptor, List<T> objects = null, int LEAF_OBJ_MAX = 1)
+        /// <param name="maxPerLeft">WARNING! currently this must be 1 to use dynamic BVH updates</param>
+        public NativeBoundingHierarchy(IBVHNodeAdapter<T> nodeAdaptor, List<T> objects = null, int maxPerLeft = 1)
         {
-            this.LEAF_OBJ_MAX = LEAF_OBJ_MAX;
+            this.LEAF_OBJ_MAX = maxPerLeft;
 
-            nodeAdaptor.setBVH(this);
+            nodeAdaptor.Allocate(this);
 
-            this.nAda = nodeAdaptor;
+            //nodeAdaptor.setBVH(this);
+
+            this.adapter = nodeAdaptor;
 
             this.dataBuckets = new NativeBuffer<NativeBuffer<T>>(MaxBuckets, Allocator.Persistent);
 
             this.Nodes = new NativeBuffer<Node>(MaxNodes, Allocator.Persistent);
+
+            _isCreated = 1;    
 
             //this.nodes = new NativeBuffer<Node2<T>>(100, Allocator.Persistent);
 
@@ -347,5 +366,7 @@ namespace SimpleScene.Util.ssBVH
                 //rootBVH.Items = new List<T>(); // it's a leaf, so give it an empty object list
             //}
         }
+
+
     }
 }

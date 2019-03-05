@@ -356,9 +356,9 @@ namespace SimpleScene.Util.ssBVH
         /// tryRotate looks at all candidate rotations, and executes the rotation with the best resulting SAH (if any)
         /// </summary>
         /// <param name="bvh"></param>
-        internal static void tryRotate<T>(Node* node, ssBVH<T> bvh) where T : struct, IBVHNode
+        internal static void tryRotate<T>(Node* node, NativeBoundingHierarchy<T> bvh) where T : struct, IBVHNode
         {
-            IBVHNodeAdapter<T> nAda = bvh.nAda;
+            IBVHNodeAdapter<T> nAda = bvh.adapter;
 
             // if we are not a grandparent, then we can't rotate, so queue our parent and bail out
             if (node->left->IsLeaf && node->right->IsLeaf)
@@ -951,7 +951,7 @@ namespace SimpleScene.Util.ssBVH
 
         //}
 
-        internal static Node* CreateNode<T>(ssBVH<T> bvh) where T : struct, IBVHNode
+        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh) where T : struct, IBVHNode
             //internal Node(ssBVH<T> bvh)
         {
             //var node = new Node();
@@ -968,7 +968,7 @@ namespace SimpleScene.Util.ssBVH
             return node;
         }
 
-        internal static Node* CreateNode<T>(ssBVH<T> bvh, List<T> gobjectlist) where T : struct, IBVHNode
+        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh, List<T> gobjectlist) where T : struct, IBVHNode
         {
             return Node.CreateNode<T>(bvh, null, gobjectlist, Axis.X, 0);
         }
@@ -977,11 +977,11 @@ namespace SimpleScene.Util.ssBVH
 
         //}
 
-        internal static Node* CreateNode<T>(ssBVH<T> bvh, Node* lparent, List<T> gobjectlist, Axis lastSplitAxis, int curdepth, int bucketIndex = -1) where T : struct, IBVHNode
+        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh, Node* lparent, List<T> gobjectlist, Axis lastSplitAxis, int curdepth, int bucketIndex = -1) where T : struct, IBVHNode
         //private Node(ssBVH<T> bvh, Node<T> lparent, List<T> gobjectlist, Axis lastSplitAxis, int curdepth, int bucketIndex = -1)
         {
             Node* node = bvh.CreateNode();
-            IBVHNodeAdapter<T> nAda = bvh.nAda;
+            IBVHNodeAdapter<T> nAda = bvh.adapter;
             node->nodeNumber = bvh.nodeCount++;
             node->parent = lparent; // save off the parent BVHGObj Node
             node->depth = curdepth;
