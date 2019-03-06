@@ -1,7 +1,10 @@
 ﻿using System;
+using System.CodeDom;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Unity.Burst;
 using Unity.Collections;
@@ -41,7 +44,7 @@ namespace Vella.Common
             _maxIndex = -1;
         }
 
-        public unsafe ref T this[int i] => ref _buffer.AsRef<T>(i);
+        public ref T this[int i] => ref _buffer.AsRef<T>(i);
 
         public int Add(T item)
         { 
@@ -116,6 +119,49 @@ namespace Vella.Common
 
         public void Dispose() => _buffer.Dispose();
 
+        public void Sort(IComparer<T> comparer = null)
+        {         
+            Sort(comparer ?? StructComparer<T>.Default, 0, _maxIndex, ListSortDirection.Ascending);
+        }
+
+        public void SortDescending(IComparer<T> comparer = null)
+        {
+            Sort(comparer ?? StructComparer<T>.Default, 0, _maxIndex, ListSortDirection.Descending);
+        }
+
+        private void Sort(IComparer<T> comparer, int min, int max, ListSortDirection direction)
+        {
+            int i = min, j = max;
+            var pivot = this[(min + max) / 2];
+            while (i <= j)
+            {
+                if (direction == ListSortDirection.Ascending)
+                {
+                    while (comparer.Compare(this[i], pivot) < 0) i++;
+                    while (comparer.Compare(this[j], pivot) > 0) j--;
+                }
+                else
+                {
+                    while (comparer.Compare(this[i], pivot) > 0) i++;
+                    while (comparer.Compare(this[j], pivot) < 0) j--;
+                }
+                if (i > j) continue;
+                T tmp = this[i];
+                this[i] = this[j];
+                this[j] = tmp;
+                i++;
+                j--;
+            }
+            if (min < j)
+            {
+                Sort(comparer, min, j, direction);
+            }
+            if (i < max)
+            {
+                Sort(comparer, i, max, direction);
+            }
+        }
+
         public NativeBufferEnumerator GetEnumerator() => new NativeBufferEnumerator(ref this);
 
         public ref struct NativeBufferEnumerator
@@ -135,8 +181,45 @@ namespace Vella.Common
 
             public ref T Current => ref _source._buffer.AsRef<T>(_index);
         }
+    }
 
+    public static class StructComparer<T> where T : struct
+    {
+        public static readonly IComparer<T> Default;
 
+        static StructComparer()
+        {
+            if (typeof(T) == typeof(int))
+                Default = new DefaultIntComparer() as IComparer<T>;            
+            else if (typeof(T) == typeof(float))
+                Default = new DefaultFloatComparer() as IComparer<T>;
+            else if (typeof(T) == typeof(double))
+                Default = new DefaultDoubleComparer() as IComparer<T>;
+            else if (typeof(T) == typeof(bool))
+                Default = new DefaultBoolComparer() as IComparer<T>;
+            else
+                throw new InvalidOperationException("Unsupported default StructComparer for " + typeof(T));
+        }
+
+        public struct DefaultFloatComparer : IComparer<float>
+        {            
+            public int Compare(float a, float b) => a < b ? -1 : a > b ? 1 : 0;
+        }
+
+        public struct DefaultIntComparer : IComparer<int>
+        {
+            public int Compare(int a, int b) => a < b ? -1 : a > b ? 1 : 0;
+        }
+
+        public struct DefaultDoubleComparer : IComparer<double>
+        {
+            public int Compare(double a, double b) => a < b ? -1 : a > b ? 1 : 0;
+        }
+
+        public struct DefaultBoolComparer : IComparer<bool>
+        {
+            public int Compare(bool a, bool b) => a == b ? 0 : !a ? -1 : 1;
+        }
     }
 
     internal sealed class NativeBufferDebugView<T> where T : struct
@@ -183,7 +266,7 @@ namespace Vella.Common
         {
             NativeBuffer buffer;
             buffer.m_Buffer = ptr;
-            buffer.m_Length =
+            buffer.m_Length = length;
             buffer.itemSize = UnsafeUtility.SizeOf<T>();
             buffer.m_MinIndex = 0;
             buffer.m_MaxIndex = length - 1;

@@ -13,11 +13,9 @@
 //
 //
 
-using JacksonDunstan.NativeCollections;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using Unity.Collections;
 using Unity.Mathematics;
 using Vella.Common;
@@ -31,159 +29,172 @@ namespace SimpleScene.Util.ssBVH
 {
     public enum Axis
     {
-        X, Y, Z,
+        X,
+        Y,
+        Z
     }
 
-    public interface IBVHNodeAdapter<T> where T : struct, IBVHNode, IEquatable<T>
+    public interface IBoundingHierarchyAdapter<T> where T : struct, IBoundingHierarchyNode, IEquatable<T>
     {
+        NativeBoundingHierarchy<T> BVH { get; }
         void SetBvH(NativeBoundingHierarchy<T> bvh);
 
-        NativeBoundingHierarchy<T> BVH { get; }
+        float3 Position(T obj);
 
-        //bool IsCreated { get; }
+        float Radius(T obj);
 
-        //void setBVH(NativeBoundingHierarchy<T> bvh);
+        void MapLeaf(T obj, Node leaf);
 
-        float3 objectpos(T obj);
-
-        float radius(T obj);
-
-        void mapObjectToBVHLeaf(T obj, Node leaf);
-
-        void UnmapObject(T obj);
-
-        void checkMap(T obj);
+        void Unmap(T obj);
 
         void checkForChanges(T obj);
 
-        Node getLeaf(T obj);
+        Node GetLeaf(T obj);
     }
 
-    public unsafe class NativeBoundingHierarchy<T> : IDisposable where T : struct, IBVHNode, IEquatable<T>
+    public unsafe class NativeBoundingHierarchy<T> : IDisposable where T : struct, IBoundingHierarchyNode, IEquatable<T>
     {
+        public delegate bool NodeTest(BoundingBox box);
+
         public const int MaxBuckets = 10;
         public const int MaxItemsPerBucket = 10;
         public const int MaxNodes = 100;
 
+        public readonly int LEAF_OBJ_MAX;
         public int _isCreated;
-        public bool IsCreated => _isCreated == 1;
+        public IBoundingHierarchyAdapter<T> Adapter;
+        public NativeBuffer<NativeBuffer<T>> DataBuckets;
 
-        public Node* rootBVH;
-
-        //public Node* rootBVHPtr;
-
-        public IBVHNodeAdapter<T> adapter;
-
-        //public NativeList<Node<T>> items = new NativeList<Node<T>>();
-
-        // Heap array of pointers to other scattered heap arrays.
-        public NativeBuffer<NativeBuffer<T>> dataBuckets;
-
+        // All data has been moved here so it can be merged into as few blocks as possible. #todo #yolo
+        public NativeHashMap<T, Node> Map;
+        public int maxDepth = 0;
+        public int nodeCount = 0;
         public NativeBuffer<Node> Nodes;
 
-        public NativeHashMap<T, Node> _map;
+        public HashSet<Node> refitNodes = new HashSet<Node>();
 
-        //public NativeBuffer<Node2<T>> nodes;
+        public Node* RootNode;
 
-        public readonly int LEAF_OBJ_MAX;
+        private NativeBoundingHierarchy() { }
 
-        public int nodeCount = 0;
-        public int maxDepth = 0;
-
-        public ref NativeBuffer<T> GetBucketRef(int index)
+        /// <summary>
+        ///     initializes a BVH with a given nodeAdaptor, and object list.
+        /// </summary>
+        /// <param name="nodeAdaptor"></param>
+        /// <param name="objects"></param>
+        /// <param name="maxPerLeft">WARNING! currently this must be 1 to use dynamic BVH updates</param>
+        public NativeBoundingHierarchy(IBoundingHierarchyAdapter<T> nodeAdaptor, List<T> objects = null, int maxPerLeft = 1)
         {
-            return ref dataBuckets[index];
+            LEAF_OBJ_MAX = maxPerLeft;
+
+            Adapter = nodeAdaptor;
+            Adapter.SetBvH(this);
+
+            Map = new NativeHashMap<T, Node>(MaxNodes, Allocator.Persistent);
+            Nodes = new NativeBuffer<Node>(MaxNodes, Allocator.Persistent);
+            DataBuckets = new NativeBuffer<NativeBuffer<T>>(MaxBuckets, Allocator.Persistent);
+            RootNode = Node.CreateNode(this);
+
+            // todo add objects from input list
+
+            _isCreated = 1;
         }
 
-        public ref NativeBuffer<T> GetBucketRef(Node node)
+        public bool IsCreated => _isCreated == 1;
+
+        public void Dispose()
         {
-            return ref dataBuckets[node.ItemIndex];
+            if (IsCreated)
+            {
+                if (DataBuckets.IsCreated)
+                {
+                    foreach (var item in DataBuckets)
+                        if (item.IsCreated)
+                            item.Dispose();
+                    DataBuckets.Dispose();
+                }
+
+                if (Nodes.IsCreated) Nodes.Dispose();
+                if (Map.IsCreated) Map.Dispose();
+            }
         }
 
         public int CreateBucket()
         {
-            return dataBuckets.Add(new NativeBuffer<T>(MaxItemsPerBucket, Allocator.Persistent));
+            return DataBuckets.Add(new NativeBuffer<T>(MaxItemsPerBucket, Allocator.Persistent));
         }
 
-        public Node* CreateNode()
+        public ref NativeBuffer<T> GetBucket(int index)
+        {
+            return ref DataBuckets[index];
+        }
+
+        public ref NativeBuffer<T> GetBucket(Node* node)
+        {
+            return ref DataBuckets[node->BucketIndex];
+        }
+
+        public ref NativeBuffer<T> GetBucket(Node node)
+        {
+            return ref DataBuckets[node.BucketIndex];
+        }
+
+        internal Node* CreateNode()
         {
             var index = Nodes.Add(new Node());
-            var node = Nodes.GetItemPtr<Node>(index);           
-            node->ThisPtr = node;
+            var node = Nodes.GetItemPtr<Node>(index);
+
+            // todo: stored pointer needs to be updated if location in Nodes array changes (remove etc)
+            node->BaseAddress = node;
+
             return node;
         }
 
-        public HashSet<Node> refitNodes = new HashSet<Node>();
-
-        public delegate bool NodeTest(SSAABB box);
-
-        // internal functional traversal...
         private void _traverse(Node curNode, NodeTest hitTest, List<Node> hitlist)
         {
-            if (!curNode.IsValid) // not sure about this traverse end.
-            {
-                return;
-            }
+            if (!curNode.IsValid) return;
 
-            if (hitTest(curNode.box))
+            if (hitTest(curNode.Box))
             {
                 hitlist.Add(curNode);
 
-                if (curNode.left != null)
-                {
-                    _traverse(*curNode.left, hitTest, hitlist);
-                }
-                if (curNode.right != null)
-                {
-                    _traverse(*curNode.right, hitTest, hitlist);
-                }
+                if (curNode.Left != null) _traverse(*curNode.Left, hitTest, hitlist);
+                if (curNode.Right != null) _traverse(*curNode.Right, hitTest, hitlist);
             }
         }
 
-        private void _traverse(Node curNode, Func<Node,bool> hitTest, List<Node> hitlist)
+        private void _traverse(Node curNode, Func<Node, bool> hitTest, List<Node> hitlist)
         {
-            if (!curNode.IsValid || hitTest == null)
-            {
-                return;
-            }
+            if (!curNode.IsValid || hitTest == null) return;
 
             if (hitTest.Invoke(curNode))
             {
                 hitlist.Add(curNode);
 
-                if (curNode.left != null)
-                {
-                    _traverse(*curNode.left, hitTest, hitlist);
-                }
-                if (curNode.right != null)
-                {
-                    _traverse(*curNode.right, hitTest, hitlist);
-                }
+                if (curNode.Left != null) _traverse(*curNode.Left, hitTest, hitlist);
+                if (curNode.Right != null) _traverse(*curNode.Right, hitTest, hitlist);
             }
         }
 
-        // public interface to traversal..
         public List<Node> Traverse(NodeTest hitTest)
         {
-            if (rootBVH == null)
+            if (RootNode == null)
                 throw new InvalidOperationException("rootnode null pointer");
 
             var hits = new List<Node>();
-            this._traverse(*rootBVH, hitTest, hits);
+            _traverse(*RootNode, hitTest, hits);
             return hits;
         }
-
 
         public List<Node> TraverseNode(Func<Node, bool> hitTest)
         {
-            if (rootBVH == null)
+            if (RootNode == null)
                 throw new InvalidOperationException("rootnode null pointer");
 
             var hits = new List<Node>();
-            this._traverse(*rootBVH, hitTest, hits);
+            _traverse(*RootNode, hitTest, hits);
             return hits;
         }
-
 
         //// left in for compatibility..
         //public List<ssBVHNode<GO>> traverseRay(SSRay ray)
@@ -200,30 +211,26 @@ namespace SimpleScene.Util.ssBVH
         //    return traverse(box => OpenTKHelper.intersectRayAABox1(ray, box, ref tnear, ref tfar));
         //}
 
-        public List<Node> traverse(SSAABB volume)
+        public List<Node> traverse(BoundingBox volume)
         {
             return Traverse(box => box.IntersectsAABB(volume));
         }
 
         /// <summary>
-        /// Call this to batch-optimize any object-changes notified through 
-        /// ssBVHNode.refit_ObjectChanged(..). For example, in a game-loop, 
-        /// call this once per frame.
+        ///     Call this to batch-optimize any object-changes notified through
+        ///     ssBVHNode.refit_ObjectChanged(..). For example, in a game-loop,
+        ///     call this once per frame.
         /// </summary>
-
-        public void optimize()
+        public void Optimize()
         {
-            if (LEAF_OBJ_MAX != 1)
-            {
-                throw new Exception("In order to use optimize, you must set LEAF_OBJ_MAX=1");
-            }
+            if (LEAF_OBJ_MAX != 1) throw new Exception("In order to use optimize, you must set LEAF_OBJ_MAX=1");
 
             while (refitNodes.Count > 0)
             {
-                int maxdepth = refitNodes.Max(n => n.depth);
-                var sweepNodes = refitNodes.Where(n => n.depth == maxdepth).ToList();
+                var maxdepth = refitNodes.Max(n => n.Depth);
+                var sweepNodes = refitNodes.Where(n => n.Depth == maxdepth).ToList();
                 sweepNodes.ForEach(n => refitNodes.Remove(n));
-                sweepNodes.ForEach(n => Node.tryRotate(n.ThisPtr, this));
+                sweepNodes.ForEach(n => Node.TryRotate(this, n.BaseAddress));
             }
         }
 
@@ -239,7 +246,7 @@ namespace SimpleScene.Util.ssBVH
 
         //    if (curNode == null)
         //        return;
-            
+
         //    //if(curNode.Items?.Count > 0)
         //    //{
         //    //    for (int i = 0; i < curNode.Items.Count; i++)
@@ -270,109 +277,311 @@ namespace SimpleScene.Util.ssBVH
         //}
 
 
-        public void addObject(T newOb)
+        public void Add(T newOb)
         {
-            SSAABB box = SSAABB.FromSphere(adapter.objectpos(newOb), adapter.radius(newOb));
+            var box = BoundingBox.FromSphere(Adapter.Position(newOb), Adapter.Radius(newOb));
 
-            float boxSAH = Node.SA(ref box);
+            var boxSAH = Node.Sa(ref box);
 
-            rootBVH->AddObject(adapter, newOb, ref box, boxSAH);
+            AddObjectToNode(RootNode, newOb, ref box, boxSAH);
         }
 
-        public void removeObject(T newObj)
+        public void Remove(T newObj)
         {
-            var leaf = adapter.getLeaf(newObj);
-            leaf.RemoveObject(adapter, newObj);
+            var leaf = Adapter.GetLeaf(newObj);
+            RemoveObjectFromNode(leaf, newObj);
         }
 
-        public int countBVHNodes()
+        public int CountBVHNodes()
         {
-            return rootBVH->CountBVHNodes();
+            return RootNode->CountNodes();
         }
 
-        public void Dispose()
+        internal void Add(Node node, T newOb, ref BoundingBox newObBox, float newObSAH)
         {
-            if(IsCreated)
-            {    
-                if (dataBuckets.IsCreated)
+            AddObjectToNode(node.BaseAddress, newOb, ref newObBox, newObSAH);
+        }
+
+        internal void AddObjectToNode(Node* node, T newOb, ref BoundingBox newObBox, float newObSAH)
+        {
+            // 1. first we traverse the node looking for the best leaf
+            while (node->BucketIndex == -1)
+            {
+                // find the best way to add this object.. 3 options..
+                // 1. send to left node  (L+N,R)
+                // 2. send to right node (L,R+N)
+                // 3. merge and pushdown left-and-right node (L+R,N)
+
+                var left = node->Left;
+                var right = node->Right;
+
+                var leftSAH = Node.Sa(left);
+                var rightSAH = Node.Sa(right);
+                var sendLeftSAH = rightSAH + Node.Sa(left->Box.ExpandedBy(newObBox)); // (L+N,R)
+                var sendRightSAH = leftSAH + Node.Sa(right->Box.ExpandedBy(newObBox)); // (L,R+N)
+                var mergedLeftAndRightSAH = Node.Sa(Node.AabBofPair(left, right)) + newObSAH; // (L+R,N)
+
+                // Doing a merge-and-pushdown can be expensive, so we only do it if it's notably better
+                const float MERGE_DISCOUNT = 0.3f;
+
+                if (mergedLeftAndRightSAH < Math.Min(sendLeftSAH, sendRightSAH) * MERGE_DISCOUNT)
                 {
-                    foreach (var item in dataBuckets)
-                    {
-                        if (item.IsCreated)
-                        {
-                            item.Dispose();
-                        }
-                    }
-                    dataBuckets.Dispose();
+                    Node.AddObject_Pushdown(Adapter, node, newOb);
+                    return;
                 }
-                if(Nodes.IsCreated)
+
+                if (sendLeftSAH < sendRightSAH)
+                    node = left;
+                else
+                    node = right;
+            }
+
+            // 2. then we add the object and map it to our leaf
+            //curNode.Items.Add(newOb);
+
+            GetBucket(node).Add(newOb);
+
+            Adapter.MapLeaf(newOb, *node);
+
+            node->RefitVolume(Adapter);
+
+            SplitIfNecessary(node);
+            //node->SplitIfNecessary(Adapter);
+        }
+
+
+        internal void RemoveObjectFromNode(Node node, T newOb)
+        {
+            if (node.BucketIndex != -1) throw new Exception("removeObject() called on nonLeaf!");
+
+            Adapter.Unmap(newOb);
+
+            ref var bucket = ref node.Bucket(Adapter);
+            var idx = bucket.IndexOf(newOb);
+            bucket.RemoveAt(idx);
+
+            //Items.Remove(newOb);
+
+            if (!IsEmpty(node.BaseAddress))
+            {
+                node.RefitVolume(Adapter);
+            }
+            else
+            {
+                // our leaf is empty, so collapse it if we are not the root...
+                if (node.Parent != null)
                 {
-                    Nodes.Dispose();
-                }  
-                if(_map.IsCreated)
-                {
-                    _map.Dispose();
+                    node.BucketIndex = -1;
+                    //Items = null;
+                    RemoveLeaf(node.Parent, node.BaseAddress);
+                    node.Parent = null;
                 }
             }
         }
 
-        /// <summary>
-        /// initializes a BVH with a given nodeAdaptor, and object list.
-        /// </summary>
-        /// <param name="nodeAdaptor"></param>
-        /// <param name="objects"></param>
-        /// <param name="maxPerLeft">WARNING! currently this must be 1 to use dynamic BVH updates</param>
-        public NativeBoundingHierarchy(IBVHNodeAdapter<T> nodeAdaptor, List<T> objects = null, int maxPerLeft = 1)
+        public bool IsEmpty(Node* node)
         {
-            this.LEAF_OBJ_MAX = maxPerLeft;
-
-            //nodeAdaptor.Allocate(this);
-
-            this._map = new NativeHashMap<T, Node>(MaxNodes, Allocator.Persistent);
-
-            //nodeAdaptor.setBVH(this);
-
-            this.adapter = nodeAdaptor;
-
-            this.adapter.SetBvH(this);               
-
-            this.dataBuckets = new NativeBuffer<NativeBuffer<T>>(MaxBuckets, Allocator.Persistent);
-
-            this.Nodes = new NativeBuffer<Node>(MaxNodes, Allocator.Persistent);
-
-            _isCreated = 1;    
-
-            //this.nodes = new NativeBuffer<Node2<T>>(100, Allocator.Persistent);
-
-            //var root = new NativeBuffer<T>(10, Allocator.Persistent);
-
-            //root.Add(new T());
-
-            //var index = this.dataBuckets.Add(root);
-
-            //var first = this.dataBuckets.InsertAfter(this.dataBuckets.Tail, root);
-
-            //var test = this.dataBuckets[first.m_Index];
-
-            //var rootNode = new Node<T>();
-
-            //this.items.InsertAfter(items.Tail, rootNode);
-
-            //this.items = new NativeLinkedList<T>(100, Allocator.Persistent);
-
-            //if (objects?.Count > 0)
-            //{
-            //    rootBVH = new ssBVHNode<T>(this, objects);
-
-            //}
-            //else
-            //{
-            rootBVH = Node.CreateNode(this);
-  
-                //rootBVH.Items = new List<T>(); // it's a leaf, so give it an empty object list
-            //}
+            return !node->IsLeaf || GetBucket(node).Length == 0;
         }
 
+        public int ItemCount(Node* node)
+        {
+            return node->BucketIndex >= 0 ? GetBucket(node).Length : 0;
+        }
 
+        internal void RemoveLeaf(Node* node, Node* removeLeaf)
+        {
+            if (node->Left == null || node->Right == null) throw new Exception("bad intermediate node");
+
+            Node* keepLeaf;
+
+            if (removeLeaf == node->Left)
+                keepLeaf = node->Right;
+            else if (removeLeaf == node->Right)
+                keepLeaf = node->Left;
+            else
+                throw new Exception("removeLeaf doesn't match any leaf!");
+
+            // "become" the leaf we are keeping.
+            node->Box = keepLeaf->Box;
+            node->Left = keepLeaf->Left;
+            node->Right = keepLeaf->Right;
+
+            //Items = keepLeaf.Items;
+
+            node->BucketIndex = keepLeaf->BucketIndex;
+            ref var keepItems = ref node->Bucket(Adapter);
+
+            if (node->BucketIndex != -1)
+            {
+                node->Left->Parent = node->BaseAddress;
+
+                // reassign child parents..
+                node->Right->Parent = node->BaseAddress;
+
+                // this reassigns depth for our children
+                node->SetDepth(Adapter, node->Depth); 
+            }
+            else
+            {
+                // map the objects we adopted to us...                                                
+                foreach (ref var item in keepItems)
+                {
+                    Adapter.MapLeaf(item, *node);
+                }
+            }
+
+            // propagate our new volume..
+            if (node->Parent != null) node->Parent->ChildRefit(Adapter);
+        }
+
+        internal void ChildRefit(Node* curNode, bool propagate = true)
+        {
+            do
+            {
+                var oldbox = curNode->Box;
+                var left = curNode->Left;
+                var right = curNode->Right;
+
+                // start with the left box
+                var newBox = left->Box;
+
+                // expand any dimension bigger in the right node
+                if (right->Box.Min.x < newBox.Min.x) newBox.Min.x = right->Box.Min.x;
+                if (right->Box.Min.y < newBox.Min.y) newBox.Min.y = right->Box.Min.y;
+                if (right->Box.Min.z < newBox.Min.z) newBox.Min.z = right->Box.Min.z;
+
+                if (right->Box.Max.x > newBox.Max.x) newBox.Max.x = right->Box.Max.x;
+                if (right->Box.Max.y > newBox.Max.y) newBox.Max.y = right->Box.Max.y;
+                if (right->Box.Max.z > newBox.Max.z) newBox.Max.z = right->Box.Max.z;
+
+                // now set our box to the newly created box
+                curNode->Box = newBox;
+
+                // and walk up the tree
+                curNode = curNode->Parent;
+            } while (propagate && curNode != null);
+        }
+
+        internal void SplitIfNecessary(Node* node) 
+        {            
+            if (ItemCount(node) > LEAF_OBJ_MAX)
+            {
+                node->SplitNode(Adapter);
+            }
+        }
+
+        internal void ChildExpanded(Node node, Node child)
+        {
+            var expanded = false;
+            if (child.Box.Min.x < node.Box.Min.x)
+            {
+                node.Box.Min.x = child.Box.Min.x;
+                expanded = true;
+            }
+
+            if (child.Box.Max.x > node.Box.Max.x)
+            {
+                node.Box.Max.x = child.Box.Max.x;
+                expanded = true;
+            }
+
+            if (child.Box.Min.y < node.Box.Min.y)
+            {
+                node.Box.Min.y = child.Box.Min.y;
+                expanded = true;
+            }
+
+            if (child.Box.Max.y > node.Box.Max.y)
+            {
+                node.Box.Max.y = child.Box.Max.y;
+                expanded = true;
+            }
+
+            if (child.Box.Min.z < node.Box.Min.z)
+            {
+                node.Box.Min.z = child.Box.Min.z;
+                expanded = true;
+            }
+
+            if (child.Box.Max.z > node.Box.Max.z)
+            {
+                node.Box.Max.z = child.Box.Max.z;
+                expanded = true;
+            }
+
+            if (expanded && node.Parent != null) node.Parent->ChildExpanded(Adapter, node);
+        }
+
+        internal void ComputeVolume(Node* node) 
+        {
+            ref var bucket = ref GetBucket(node->BucketIndex);
+
+            AssignVolume(node, Adapter.Position(bucket[0]), Adapter.Radius(bucket[0]));
+
+            for (var i = 0; i < bucket.Length; i++)
+            {
+                ExpandVolume(node, Adapter.Position(bucket[i]), Adapter.Radius(bucket[i]));
+            }
+        }
+
+        public static void AssignVolume(Node* node, float3 position, float radius)
+        {
+            node->Box.Min.x = position.x - radius;
+            node->Box.Max.x = position.x + radius;
+            node->Box.Min.y = position.y - radius;
+            node->Box.Max.y = position.y + radius;
+            node->Box.Min.z = position.z - radius;
+            node->Box.Max.z = position.z + radius;
+        }
+
+        private void ExpandVolume(Node* node, float3 objectpos, float radius)
+        {
+            var expanded = false;
+
+            // test min X and max X against the current bounding volume
+            if (objectpos.x - radius < node->Box.Min.x)
+            {
+                node->Box.Min.x = objectpos.x - radius;
+                expanded = true;
+            }
+
+            if (objectpos.x + radius > node->Box.Max.x)
+            {
+                node->Box.Max.x = objectpos.x + radius;
+                expanded = true;
+            }
+
+            // test min Y and max Y against the current bounding volume
+            if (objectpos.y - radius < node->Box.Min.y)
+            {
+                node->Box.Min.y = objectpos.y - radius;
+                expanded = true;
+            }
+
+            if (objectpos.y + radius > node->Box.Max.y)
+            {
+                node->Box.Max.y = objectpos.y + radius;
+                expanded = true;
+            }
+
+            // test min Z and max Z against the current bounding volume
+            if (objectpos.z - radius < node->Box.Min.z)
+            {
+                node->Box.Min.z = objectpos.z - radius;
+                expanded = true;
+            }
+
+            if (objectpos.z + radius > node->Box.Max.z)
+            {
+                node->Box.Max.z = objectpos.z + radius;
+                expanded = true;
+            }
+
+            if (expanded && node->Parent != null)
+            {
+                node->Parent->ChildExpanded(Adapter, *node);
+            }
+        }
     }
 }

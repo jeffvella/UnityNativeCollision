@@ -7,24 +7,24 @@ using Unity.Mathematics;
 
 namespace SimpleScene
 {
-    public struct SSAABB : IEquatable<SSAABB>
+    public struct BoundingBox : IEquatable<BoundingBox>
     {
         public float3 Min;
         public float3 Max;
 
-        public SSAABB(float min = float.PositiveInfinity, float max = float.NegativeInfinity)
+        public BoundingBox(float min = float.PositiveInfinity, float max = float.NegativeInfinity)
         {
             Min = new float3(min);
             Max = new float3(max);
         }
 
-        public SSAABB(float3 min, float3 max)
+        public BoundingBox(float3 min, float3 max)
         {
             Min = min;
             Max = max;
         }
 
-        public void Combine(ref SSAABB other)
+        public void Combine(ref BoundingBox other)
         {
             Min = math.min(Min, other.Min);
             Max = math.max(Max, other.Max);
@@ -54,14 +54,14 @@ namespace SimpleScene
             return IntersectsSphere(sphere.center, sphere.radius);
         }
 
-        public bool IntersectsAABB(SSAABB box)
+        public bool IntersectsAABB(BoundingBox box)
         {
             return ((Max.x > box.Min.x) && (Min.x < box.Max.x) &&
                      (Max.y > box.Min.y) && (Min.y < box.Max.y) &&
                      (Max.z > box.Min.z) && (Min.z < box.Max.z));
         }
 
-        public bool Equals(SSAABB other)
+        public bool Equals(BoundingBox other)
         {
             return
                 (Min.x == other.Min.x) &&
@@ -104,7 +104,7 @@ namespace SimpleScene
             UpdateMax(b);
         }
 
-        internal void ExpandToFit(SSAABB b)
+        internal void ExpandToFit(BoundingBox b)
         {
             if (b.Min.x < this.Min.x) { this.Min.x = b.Min.x; }
             if (b.Min.y < this.Min.y) { this.Min.y = b.Min.y; }
@@ -115,9 +115,9 @@ namespace SimpleScene
             if (b.Max.z > this.Max.z) { this.Max.z = b.Max.z; }
         }
 
-        public SSAABB ExpandedBy(SSAABB b)
+        public BoundingBox ExpandedBy(BoundingBox b)
         {
-            SSAABB newbox = this;
+            BoundingBox newbox = this;
             if (b.Min.x < newbox.Min.x) { newbox.Min.x = b.Min.x; }
             if (b.Min.y < newbox.Min.y) { newbox.Min.y = b.Min.y; }
             if (b.Min.z < newbox.Min.z) { newbox.Min.z = b.Min.z; }
@@ -129,14 +129,14 @@ namespace SimpleScene
             return newbox;
         }
 
-        public void ExpandBy(SSAABB b)
+        public void ExpandBy(BoundingBox b)
         {
             this = this.ExpandedBy(b);
         }
 
-        public static SSAABB FromSphere(float3 pos, float radius)
+        public static BoundingBox FromSphere(float3 pos, float radius)
         {
-            SSAABB box;
+            BoundingBox box;
             box.Min.x = pos.x - radius;
             box.Max.x = pos.x + radius;
             box.Min.y = pos.y - radius;
@@ -158,9 +158,9 @@ namespace SimpleScene
             new float4(1f, -1f, 1f, 1f),
         };
 
-        public static SSAABB FromFrustum(ref float4x4 axisTransform, ref float4x4 modelViewProj)
+        public static BoundingBox FromFrustum(ref float4x4 axisTransform, ref float4x4 modelViewProj)
         {
-            SSAABB ret = new SSAABB(float.PositiveInfinity, float.NegativeInfinity);
+            BoundingBox ret = new BoundingBox(float.PositiveInfinity, float.NegativeInfinity);
             float4x4 inverse = math.inverse(modelViewProj);
             for (int i = 0; i < c_homogenousCorners.Length; ++i)
             {

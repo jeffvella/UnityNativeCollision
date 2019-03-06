@@ -1,4 +1,5 @@
 ﻿using SimpleScene;
+using SimpleScene.Util.ssBVH;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -8,16 +9,11 @@ using Unity.Mathematics;
 using UnityEngine;
 using Vella.UnityNativeHull;
 
-public interface IBVHNode
-{
-    float3 Position { get; }
-    float Radius { get; }
-    ref int HasChanged { get; }
-}
+
 
 
 [DebuggerDisplay("TestShape: Id={TransformId}")]
-public struct TestShape : IBVHNode, IEquatable<TestShape>
+public struct TestShape : IBoundingHierarchyNode, IEquatable<TestShape>
 {
     //public Transform Transform;
     public int TransformId;
@@ -37,6 +33,7 @@ public struct TestShape : IBVHNode, IEquatable<TestShape>
     //public bool HasChanged => UnityEngine.GameObject.Find(TransformId.ToString())?.transform.hasChanged ?? false;
 
     private int _hasChanged;
+
     public unsafe ref int HasChanged => ref *(int*)UnsafeUtility.AddressOf(ref _hasChanged);
 
     public float3 Position => Transform.pos;
@@ -44,7 +41,7 @@ public struct TestShape : IBVHNode, IEquatable<TestShape>
 
     public NativeHull Hull;
 
-    public SSAABB BoundingBox;
+    public BoundingBox BoundingBox;
 
     public SimpleScene.BoundingSphere BoundingSphere;
 
@@ -91,7 +88,7 @@ public struct TestShape : IBVHNode, IEquatable<TestShape>
 
     public bool Equals(TestShape other)
     {
-        return TransformId == other.TransformId; // other.Transform.pos == Transform.pos && other.Transform.rot == Transform.rot;
+        return TransformId == other.TransformId;
     }
 
     public override bool Equals(object obj)
@@ -104,7 +101,7 @@ public struct TestShape : IBVHNode, IEquatable<TestShape>
         return TransformId;
     }
 
-    public bool Equals(IBVHNode other)
+    public bool Equals(IBoundingHierarchyNode other)
     {
         return Equals((TestShape)other);
     }

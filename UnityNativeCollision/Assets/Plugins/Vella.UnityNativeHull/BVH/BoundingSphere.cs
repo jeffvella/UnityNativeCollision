@@ -37,18 +37,18 @@ namespace SimpleScene
         //    return distanceToSphereOrigin <= this.radius;
         //}
 
-        public bool IntersectsAABB(SSAABB aabb)
+        public bool IntersectsAABB(BoundingBox aabb)
         {
             return aabb.IntersectsSphere(this);
         }
 
-        public SSAABB ToAABB()
+        public BoundingBox ToAABB()
         {
             float3 rvec = new float3(radius);
-            return new SSAABB(center - rvec, center + rvec);
+            return new BoundingBox(center - rvec, center + rvec);
         }
 
-        public static BoundingSphere FromAABB(SSAABB box)
+        public static BoundingSphere FromAABB(BoundingBox box)
         {
             BoundingSphere result;
             result.center = (box.Min + box.Max) * .5f;

@@ -51,11 +51,11 @@ public class HullTester : MonoBehaviour
         {
             var id = transform.GetInstanceID();
 
-            for (int i = 0; i < _bvh.dataBuckets.Length; i++)
+            for (int i = 0; i < _bvh.DataBuckets.Length; i++)
             {
-                for (int j = 0; j < _bvh.dataBuckets[i].Length; j++)
+                for (int j = 0; j < _bvh.DataBuckets[i].Length; j++)
                 {
-                    ref var shape = ref _bvh.dataBuckets[i][j];
+                    ref var shape = ref _bvh.DataBuckets[i][j];
                     if (shape.TransformId == id)
                     {
                         shape.HasChanged = transform.hasChanged ? 1 : 0;
@@ -285,24 +285,24 @@ public class HullTester : MonoBehaviour
 
             foreach (var shape in Hulls.Values)
             {
-                _bvh.addObject(shape);
+                _bvh.Add(shape);
             }
         }
 
         var test = Hulls.First().Value;
 
-        var mappedNode = _bvh.adapter.getLeaf(test);
+        var mappedNode = _bvh.Adapter.GetLeaf(test);
 
-        var bucket = _bvh.GetBucketRef(mappedNode.ItemIndex);
+        var bucket = _bvh.GetBucket(mappedNode.BucketIndex);
 
         //_bvh.CheckForChanges();
-        _bvh.optimize();
+        _bvh.Optimize();
 
         if (DrawBVH)
         {
             _bvh.TraverseNode(node =>
             {
-                DebugDrawer.DrawDottedWireCube(node.box.Center(), node.box.Diff(), UnityColors.LightSlateGray.ToOpacity(0.6f));
+                DebugDrawer.DrawDottedWireCube(node.Box.Center(), node.Box.Diff(), UnityColors.LightSlateGray.ToOpacity(0.6f));
                 return true;
             });
         }
@@ -310,7 +310,7 @@ public class HullTester : MonoBehaviour
 
     private TestShape CreateShape(Transform t)
     {
-        var bounds = new SSAABB();
+        var bounds = new BoundingBox();
         var hull = CreateHull(t);
 
         for (int i = 0; i < hull.VertexCount; i++)
