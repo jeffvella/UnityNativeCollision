@@ -23,6 +23,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Unity.Mathematics;
 using Vella.Common;
 
@@ -50,13 +51,16 @@ namespace SimpleScene.Util.ssBVH
     public unsafe partial struct Node
     {
         public BoundingBox Box;
-        public Node* BaseAddress;
+        public Node* Ptr;
         public Node* Left;
         public Node* Right;
         public Node* Parent;
         public int Depth;
         public int NodeNumber;
         public int BucketIndex;
+
+        public bool IsLeaf => BucketIndex != -1 && Left != null && Right != null;
+
     }
 
     [DebuggerDisplay("Node<{0}>:{1}")]
@@ -64,7 +68,7 @@ namespace SimpleScene.Util.ssBVH
     {
         //public ref BoundingHierarchyNode AsRef() => ref *BaseAddress;
 
-        public bool IsValid => (IntPtr)BaseAddress != IntPtr.Zero;
+        public bool IsValid => (IntPtr)Ptr != IntPtr.Zero;
 
         internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh) where T : struct, IBoundingHierarchyNode, IEquatable<T>
         {
@@ -74,13 +78,15 @@ namespace SimpleScene.Util.ssBVH
             return node;
         }
 
-        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh, List<T> gobjectlist) where T : struct, IBoundingHierarchyNode, IEquatable<T>
-        {
-            return CreateNode(bvh, null, gobjectlist, Axis.X, 0);
-        }
+        //internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh, List<T> gobjectlist) where T : struct, IBoundingHierarchyNode, IEquatable<T>
+        //{
+        //    return CreateNode(bvh, null, gobjectlist, Axis.X, 0);
+        //}
 
-        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh, Node* lparent, List<T> gobjectlist, Axis lastSplitAxis, int curdepth, int bucketIndex = -1) where T : struct, IBoundingHierarchyNode, IEquatable<T>
+        internal static Node* CreateNode<T>(NativeBoundingHierarchy<T> bvh, Node* lparent, SplitAxisOpt<T> splitInfo, SplitSide side, int curdepth, int bucketIndex = -1) where T : struct, IBoundingHierarchyNode, IEquatable<T>
         {
+            //Debugger.Break();
+        
             var node = bvh.CreateNode();
             var nAda = bvh.Adapter;
 
@@ -92,19 +98,25 @@ namespace SimpleScene.Util.ssBVH
 
             // Early out check due to bad data
             // If the list is empty then we have no BVHGObj, or invalid parameters are passed in
-            if (gobjectlist == null || gobjectlist.Count < 1) throw new Exception("ssBVHNode constructed with invalid paramaters");
-
-
+            if (splitInfo.Items.Length < 1)
+            {
+                throw new Exception("ssBVHNode constructed with invalid paramaters");
+            }
+      
+            var startIndex = side == SplitSide.Left ? splitInfo.LeftStartIndex : splitInfo.RightStartIndex;
+            var endIndex = side == SplitSide.Left ? splitInfo.LeftEndIndex : splitInfo.RightEndIndex;
+            var itemCount = endIndex - startIndex;
+        
             if (bucketIndex < 0)
             {
                 // new bucket
                 node->BucketIndex = bvh.CreateBucket();
                 ref var bucket = ref bvh.GetBucket(node->BucketIndex);
 
-                for (var i = 0; i < gobjectlist.Count; i++)
+                for (var i = startIndex; i <= endIndex; i++)
                 {
-                    bucket.Add(gobjectlist[i]);
-                    nAda.MapLeaf(gobjectlist[i], *node);
+                    bucket.Add(splitInfo.Items[i]);
+                    nAda.MapLeaf(splitInfo.Items[i], *node);                   
                 }
             }
             else
@@ -113,16 +125,21 @@ namespace SimpleScene.Util.ssBVH
                 ref var bucket = ref bvh.GetBucket(node->BucketIndex);
                 bucket.Clear();
 
-                for (var i = 0; i < gobjectlist.Count; i++)
+                for (var i = startIndex; i <= endIndex; i++)
                 {
-                    bucket.Add(gobjectlist[i]);
-                    nAda.MapLeaf(gobjectlist[i], *node);
+                    bucket.Add(splitInfo.Items[i]);
+                    nAda.MapLeaf(splitInfo.Items[i], *node);
                 }
+
+                //for (var i = 0; i < splitInfo.Count; i++)
+                //{
+                //    bucket.Add(splitInfo[i]);
+                //    nAda.MapLeaf(splitInfo[i], *node);
+                //}
             }
-
-
+    
             // Check if we’re at our LEAF node, and if so, save the objects and stop recursing.  Also store the min/max for the leaf node and update the parent appropriately
-            if (gobjectlist.Count <= bvh.LEAF_OBJ_MAX)
+            if (itemCount <= bvh.LEAF_OBJ_MAX)
             {
                 // once we reach the leaf node, we must set prev/next to null to signify the end
                 node->Left = null;
@@ -148,7 +165,6 @@ namespace SimpleScene.Util.ssBVH
             return node;
         }
 
-        public bool IsLeaf => BucketIndex != -1 && Left != null && Right != null;
 
 
         //private Axis NextAxis(Axis cur)
@@ -162,17 +178,6 @@ namespace SimpleScene.Util.ssBVH
         //    }
         //}
 
-        public void Refit_ObjectChanged<T>(IBoundingHierarchyAdapter<T> nAda, ref T obj) where T : struct, IBoundingHierarchyNode, IEquatable<T>
-        {
-            if (!IsLeaf) throw new Exception("dangling leaf!");
-            if (RefitVolume(nAda))
-            {
-                if (Parent != null)
-                {
-                    nAda.BVH.refitNodes.Add(*Parent);
-                }
-            }
-        }
 
 
 
@@ -181,32 +186,6 @@ namespace SimpleScene.Util.ssBVH
             return ref adapter.BVH.GetBucket(BucketIndex);
         }
 
-        public bool IsEmpty<T>(IBoundingHierarchyAdapter<T> nAda) where T : struct, IBoundingHierarchyNode, IEquatable<T>
-        {
-            return !IsLeaf || Bucket(nAda).Length == 0;
-        }
-
-        public int ItemCount<T>(IBoundingHierarchyAdapter<T> nAda) where T : struct, IBoundingHierarchyNode, IEquatable<T>
-        {
-            return BucketIndex >= 0 ? Bucket(nAda).Length : 0;
-        }
-
-        internal bool RefitVolume<T>(IBoundingHierarchyAdapter<T> nAda) where T : struct, IBoundingHierarchyNode, IEquatable<T>
-        {
-            //if (Items.Count == 0) { throw new NotImplementedException(); }  // TODO: fix this... we should never get called in this case...
-
-            var oldbox = Box;
-
-            //ComputeVolume(nAda);
-            nAda.BVH.ComputeVolume(BaseAddress);
-            if (!Box.Equals(oldbox))
-            {
-                if (Parent != null) Parent->ChildRefit(nAda);
-                return true;
-            }
-
-            return false;
-        }
 
         internal static float Sa(BoundingBox box)
         {
@@ -273,14 +252,25 @@ namespace SimpleScene.Util.ssBVH
             return box;
         }
 
-        internal static float SAofList<T>(IBoundingHierarchyAdapter<T> nAda, List<T> list) where T : struct, IBoundingHierarchyNode, IEquatable<T>
+        //internal static float SAofList<T>(IBoundingHierarchyAdapter<T> nAda, List<T> list) where T : struct, IBoundingHierarchyNode, IEquatable<T>
+        //{
+        //    var box = AabBofObj(nAda, list[0]);
+        //    for (var i = 1; i < list.Count; i++)
+        //    {       
+        //        var newbox = AabBofObj(nAda, list[i]);
+        //        box.ExpandBy(newbox);
+        //    }
+        //    return Sa(box);
+        //}
+
+        internal static float SAofList<T>(IBoundingHierarchyAdapter<T> nAda, NativeBuffer<T> items, int startIndex, int itemCount) where T : struct, IBoundingHierarchyNode, IEquatable<T>
         {
-            var box = AabBofObj(nAda, list[0]);
-            for (var i = 1; i < list.Count; i++)
-            {       
-                var newbox = AabBofObj(nAda, list[i]);
+            var box = AabBofObj(nAda, items[0]); 
+            for (var i = startIndex + 1; i < itemCount; i++)
+            {
+                var newbox = AabBofObj(nAda, items[i]);
                 box.ExpandBy(newbox);
-            }
+            }           
             return Sa(box);
         }
 
@@ -509,18 +499,18 @@ namespace SimpleScene.Util.ssBVH
             public int Length => ItemCount;
         }
 
-        private static IndexedAxes _axes;
+        //private static IndexedAxes _axes;
 
-        public struct IndexedAxes : IReadIndexed<Axis>
-        {
-            public const int ItemCount = 3;
+        //public struct IndexedAxes : IReadIndexed<Axis>
+        //{
+        //    public const int ItemCount = 3;
 
-            private fixed int _values[ItemCount];
+        //    private fixed int _values[ItemCount];
 
-            public Axis this[int index] => (Axis)_values[index];
+        //    public Axis this[int index] => (Axis)_values[index];
 
-            public int Length => ItemCount;
-        }
+        //    public int Length => ItemCount;
+        //}
 
         //public static TSource Min<TSource>(ref IReadIndexed<TSource> source) //where TSource : INativeComparable<TSource>
         //{            
@@ -602,27 +592,36 @@ namespace SimpleScene.Util.ssBVH
         //[DebuggerBrowsable(DebuggerBrowsableState.Never)]
         //private static List<Axis> EachAxis => new List<Axis>((Axis[])Enum.GetValues(typeof(Axis)));
 
-        internal class SplitAxisOpt<T> // : IComparable<SplitAxisOpt<T>>
+        internal struct SplitAxisOpt<T> where T : struct // : IComparable<SplitAxisOpt<T>>
         {
             public Axis Axis;
-
-            public List<T> Left, Right;
-
-            // split Axis option
+            public NativeBuffer<T> Items;
+            public int SplitIndex;
             public float Sah;
+            public int HasValue;
 
-            internal SplitAxisOpt(float sah, Axis axis, List<T> left, List<T> right)
+            public SplitAxisOpt(NativeBuffer<T> items, int splitIndex)
             {
-                Sah = sah;
-                Axis = axis;
-                Left = left;
-                Right = right;
+                Items = items;
+                SplitIndex = splitIndex;
+                Sah = default;
+                Axis = default;
+                HasValue = 0;
             }
 
-            //public int CompareTo(SplitAxisOpt<T> other)
-            //{
-            //    return Sah.CompareTo(other.Sah);
-            //}
+            public int LeftStartIndex => 0;
+            public int LeftEndIndex => SplitIndex-1;
+            public int LeftItemCount => LeftEndIndex;
+            public int RightStartIndex => SplitIndex;
+            public int RightEndIndex => Items.Length-1;
+            public int RightItemCount => RightEndIndex - RightStartIndex;
+        }
+
+        public enum SplitSide
+        {
+            None = 0,
+            Left,
+            Right
         }
 
         internal void SplitNode<T>(IBoundingHierarchyAdapter<T> adapter) where T : struct, IBoundingHierarchyNode, IEquatable<T>
@@ -630,26 +629,32 @@ namespace SimpleScene.Util.ssBVH
             // second, decide which axis to split on, and sort..
             //List<T> splitlist = Items;
 
-            ref var bucket = ref Bucket(adapter);
+            ref var bucket = ref adapter.BVH.GetBucket(BucketIndex);
             foreach (ref var item in bucket)
             {
                 adapter.Unmap(item);
             }
 
-            var splitlist = bucket.ToArray().ToList();
+            //var splitlist = bucket.ToArray().ToList();
+
+            var tmpPtr = stackalloc byte[bucket.CapacityBytes];
+            var tmpBuffer = new NativeBuffer<T>(tmpPtr, bucket.Capacity);
+            tmpBuffer.CopyFrom(bucket);
+
+            Debug.Assert(tmpBuffer.Length == bucket.Length);
 
             //splitlist.ForEach(o => adapter.UnmapObject(o));
 
 
-            var center = splitlist.Count / 2; // find the center object
+            var center = tmpBuffer.Length / 2;
 
-            SplitAxisOpt<T> bestSplit = default; //new RotOpt(float.MaxValue, Rot.None);
-            for (int i = 0; i < _axes.Length; i++)
-            {
-                var opt = SortMin(adapter, splitlist, _axes[i], center);
-                if (bestSplit == null || opt.Sah < bestSplit.Sah)
-                    bestSplit = opt;
-            }
+            SplitAxisOpt<T> splitInfo = new SplitAxisOpt<T>(tmpBuffer, center);
+
+            //Debugger.Break();
+
+            TryImproveAxisSplit(ref splitInfo, adapter, Axis.X);
+            TryImproveAxisSplit(ref splitInfo, adapter, Axis.Y);
+            TryImproveAxisSplit(ref splitInfo, adapter, Axis.Z);
 
 
             //var x = SortMin(adapter, splitlist, Axis.X, center);
@@ -701,8 +706,8 @@ namespace SimpleScene.Util.ssBVH
             var newLeftIndex = BucketIndex;
             var newRightIndex = adapter.BVH.CreateBucket();
 
-            Left = CreateNode(adapter.BVH, BaseAddress, bestSplit.Left, bestSplit.Axis, Depth + 1, newLeftIndex); // Split the Hierarchy to the left
-            Right = CreateNode(adapter.BVH, BaseAddress, bestSplit.Right, bestSplit.Axis, Depth + 1, newRightIndex); // Split the Hierarchy to the right      
+            Left = CreateNode(adapter.BVH, Ptr, splitInfo, SplitSide.Left, Depth + 1, newLeftIndex); // Split the Hierarchy to the left
+            Right = CreateNode(adapter.BVH, Ptr, splitInfo, SplitSide.Right, Depth + 1, newRightIndex); // Split the Hierarchy to the right      
 
             //Items = null;
             BucketIndex = -1;
@@ -713,35 +718,25 @@ namespace SimpleScene.Util.ssBVH
         //    return x.Sah < y.Sah ? x.Sah < z.Sah ? x : z : z.Sah < y.Sah ? z : y;
         //}
 
-        private static SplitAxisOpt<T> SortMin<T>(IBoundingHierarchyAdapter<T> adapter, List<T> splitlist, Axis axis, int center) where T : struct, IBoundingHierarchyNode, IEquatable<T>
-        {
-            var orderedlist = new List<T>(splitlist);
-            switch (axis)
-            {
-                case Axis.X:
-                    orderedlist.Sort((go1, go2) => adapter.Position(go1).x.CompareTo(adapter.Position(go2).x));
-                    break;
+        /// <summary>
+        /// Calculates sah from items grouped left/right and along a particular axis.
+        /// Updates <para>split</para> if the resulting value is lower the previous.
+        /// </summary>
+        private static void TryImproveAxisSplit<T>(ref SplitAxisOpt<T> split, IBoundingHierarchyAdapter<T> adapter, Axis axis) where T : struct, IBoundingHierarchyNode, IEquatable<T>
+        {  
+            split.Items.Sort(adapter.BVH.AxisComprarer, axis);
 
-                case Axis.Y:
-                    orderedlist.Sort((go1, go2) => adapter.Position(go1).y.CompareTo(adapter.Position(go2).y));
-                    break;
+            var leftSah = SAofList(adapter, split.Items, split.LeftStartIndex, split.LeftItemCount);
+            var rightSah = SAofList(adapter, split.Items, split.RightStartIndex, split.RightItemCount);
+            var newSah = leftSah * split.LeftItemCount + rightSah * split.RightItemCount;
 
-                case Axis.Z:
-                    orderedlist.Sort((go1, go2) => adapter.Position(go1).z.CompareTo(adapter.Position(go2).z));
-                    break;
-                default:
-                    throw new NotImplementedException("unknown split axis: " + axis);
+            if (split.HasValue == 0 || newSah < split.Sah)
+            {                
+                split.Sah = newSah;
+                split.Axis = axis;
+                split.HasValue = 1;
             }
-
-            var leftSplit = orderedlist.GetRange(0, center);
-            var rightSplit = orderedlist.GetRange(center, splitlist.Count - center);
-            var sah = SAofList(adapter, leftSplit) * leftSplit.Count + SAofList(adapter, rightSplit) * rightSplit.Count;
-
-            return new SplitAxisOpt<T>(sah, axis, leftSplit, rightSplit);
         }
-
-
-
 
         internal static void AddObject_Pushdown<T>(IBoundingHierarchyAdapter<T> adapter, Node* curNode, T newOb) where T : struct, IBoundingHierarchyNode, IEquatable<T>
         {
@@ -797,7 +792,6 @@ namespace SimpleScene.Util.ssBVH
                 return 1;
             return Left->CountNodes() + Right->CountNodes();
         }
-
 
         public void SetDepth<T>(IBoundingHierarchyAdapter<T> nAda, int newdepth) where T : struct, IBoundingHierarchyNode, IEquatable<T>
         {
@@ -861,7 +855,35 @@ namespace SimpleScene.Util.ssBVH
 
         internal void ChildRefit<T>(IBoundingHierarchyAdapter<T> nAda, bool propagate = true) where T : struct, IBoundingHierarchyNode, IEquatable<T>
         {
-            nAda.BVH.ChildRefit(BaseAddress, propagate);
+            nAda.BVH.ChildRefit(Ptr, propagate);
+        }
+
+
+    }
+
+    /// <summary>
+    /// Sort function that asks T object for a position via an adapter interface then compare them on a particular axis.
+    /// </summary>
+    public struct NodePositionAxisComparer<T> : IComparer<T, Axis> where T : struct, IBoundingHierarchyNode, IEquatable<T>
+    {
+        private readonly IBoundingHierarchyAdapter<T> _adapter;
+
+        public NodePositionAxisComparer(IBoundingHierarchyAdapter<T> adapter)
+        {
+            _adapter = adapter;
+        }
+
+        public int Compare(T a, T b, Axis axis)
+        {
+            var posA = _adapter.Position(a);
+            var posB = _adapter.Position(b);
+            switch (axis)
+            {
+                case Axis.X: return posA.x < posB.x ? -1 : posA.x > posB.x ? 1 : 0;
+                case Axis.Y: return posA.y < posB.y ? -1 : posA.y > posB.y ? 1 : 0;
+                case Axis.Z: return posA.z < posB.z ? -1 : posA.z > posB.z ? 1 : 0;
+            }
+            throw new InvalidOperationException(nameof(NodePositionAxisComparer<T>) + " - Unsupported Axis: " + axis);
         }
     }
 }

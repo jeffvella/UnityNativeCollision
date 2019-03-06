@@ -15,6 +15,25 @@ using UnityEngine.Internal;
 
 namespace Vella.Common
 {
+
+    public struct NativeBufferRange<T> where T : struct
+    {
+        public NativeBuffer<T> Buffer;
+        public int StartIndex;
+        public int EndIndex;
+
+        public NativeBufferRange(NativeBuffer<T> buffer, int start, int end)
+        {
+            StartIndex = start;
+            EndIndex = end;
+            Buffer = buffer;    
+        }
+
+        public int Length => EndIndex - StartIndex;
+
+        public ref T this[int i] => ref Buffer[i];
+    }
+
     /// <summary>
     /// NativeBuffer<T> is an alternative to NativeArray<T>. 
     /// (NativeList<T> currently has issues being instantiated within a burst job)
@@ -24,7 +43,7 @@ namespace Vella.Common
     [DebuggerTypeProxy(typeof(NativeBufferDebugView<>))]
     public struct NativeBuffer<T> : IDisposable where T : struct
     {
-        NativeBuffer _buffer;
+        private NativeBuffer _buffer;
         private int _maxIndex;
 
         /// <summary>
@@ -36,6 +55,12 @@ namespace Vella.Common
         {
             _buffer = NativeBuffer.Assign<T>(ptr, elementCount);
             _maxIndex = -1;
+        }
+
+        public void CopyFrom(NativeBuffer<T> source)
+        {
+            source._buffer.CopyTo<T>(_buffer);
+            _maxIndex = source._maxIndex;
         }
 
         public NativeBuffer(int length, Allocator allocator, NativeArrayOptions options = NativeArrayOptions.ClearMemory)
@@ -105,6 +130,8 @@ namespace Vella.Common
 
         public int Capacity => _buffer.Length;
 
+        public int CapacityBytes => _buffer.Length * _buffer.itemSize;
+
         public int Length => _maxIndex + 1;
 
         public bool IsCreated => _buffer.IsCreated;
@@ -118,6 +145,8 @@ namespace Vella.Common
         public T[] ToArray() => _buffer.ToArray<T>(Length);
 
         public void Dispose() => _buffer.Dispose();
+
+
 
         public void Sort(IComparer<T> comparer = null)
         {         
@@ -159,6 +188,49 @@ namespace Vella.Common
             if (i < max)
             {
                 Sort(comparer, i, max, direction);
+            }
+        }
+
+        public void Sort<TParam>(IComparer<T, TParam> comparer, TParam comparisonParameter) where TParam : unmanaged
+        {
+            Sort(comparer, comparisonParameter, 0, _maxIndex, ListSortDirection.Ascending);
+        }
+
+        public void SortDescending<TParam>(IComparer<T, TParam> comparer, TParam comparisonParameter) where TParam : unmanaged
+        {
+            Sort(comparer, comparisonParameter, 0, _maxIndex, ListSortDirection.Descending);
+        }
+
+        private void Sort<TParam>(IComparer<T, TParam> comparer, TParam param, int min, int max, ListSortDirection direction) where TParam : unmanaged
+        {
+            int i = min, j = max;
+            var pivot = this[(min + max) / 2];
+            while (i <= j)
+            {
+                if (direction == ListSortDirection.Ascending)
+                {
+                    while (comparer.Compare(this[i], pivot, param) < 0) i++;
+                    while (comparer.Compare(this[j], pivot, param) > 0) j--;
+                }
+                else
+                {
+                    while (comparer.Compare(this[i], pivot, param) > 0) i++;
+                    while (comparer.Compare(this[j], pivot, param) < 0) j--;
+                }
+                if (i > j) continue;
+                T tmp = this[i];
+                this[i] = this[j];
+                this[j] = tmp;
+                i++;
+                j--;
+            }
+            if (min < j)
+            {
+                Sort(comparer, param, min, j, direction);
+            }
+            if (i < max)
+            {
+                Sort(comparer, param, i, max, direction);
             }
         }
 
@@ -222,6 +294,11 @@ namespace Vella.Common
         }
     }
 
+    public interface IComparer<in T, in TParam>
+    {
+        int Compare(T a, T b, TParam param);
+    }
+
     internal sealed class NativeBufferDebugView<T> where T : struct
     {
         private NativeBuffer<T> Buffer;
@@ -251,7 +328,6 @@ namespace Vella.Common
 
 
         public int Length => m_Length;
-
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
         internal AtomicSafetyHandle m_Safety;
@@ -440,6 +516,16 @@ namespace Vella.Common
             Copy(this, array);
         }
 
+        //public void CopyTo<T>(NativeBuffer<T> buffer) where T : struct
+        //{
+        //    Copy(this, buffer);
+        //}
+
+        public void CopyTo<T>(NativeBuffer buffer) where T : struct
+        {
+            Copy<T>(this, buffer);
+        }
+
         //public unsafe NativeArray<T> AsNativeArray<T>() where T : struct
         //{ 
         //    // todo why is this not working?
@@ -537,6 +623,18 @@ namespace Vella.Common
 
             Copy<T>(src, 0, dst, 0, src.Length);
         }
+
+//        public static void Copy<T>(NativeBuffer src, NativeBuffer<T> dst) where T : struct
+//        {
+//#if ENABLE_UNITY_COLLECTIONS_CHECKS
+//            AtomicSafetyHandle.CheckReadAndThrow(src.m_Safety);
+//            AtomicSafetyHandle.CheckWriteAndThrow(dst._buffer.m_Safety);
+//#endif
+//            if (src.Length != dst.Length)
+//                throw new ArgumentException("source and destination length must be the same");
+
+//            Copy<T>(src, 0, dst._buffer, 0, src.Length);
+//        }
 
         public static void Copy<T>(T[] src, NativeBuffer dst) where T : struct
         {

@@ -75,7 +75,11 @@ public struct ShapeAdapter : IBoundingHierarchyAdapter<TestShape>
             //var o = obj;
             if (_bvh.Map.TryGetValue(obj, out Node item))
             {
-                _bvh.Map[obj].Refit_ObjectChanged(this, ref obj);
+                //var leafNode = item;
+
+                _bvh.Refit_ObjectChanged(item, ref obj);
+
+                //_bvh.Map[obj].Refit_ObjectChanged(this, ref obj);
             }
         //}
     }

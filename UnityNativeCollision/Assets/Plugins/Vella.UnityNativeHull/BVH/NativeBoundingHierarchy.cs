@@ -95,10 +95,14 @@ namespace SimpleScene.Util.ssBVH
             DataBuckets = new NativeBuffer<NativeBuffer<T>>(MaxBuckets, Allocator.Persistent);
             RootNode = Node.CreateNode(this);
 
+            AxisComprarer = new NodePositionAxisComparer<T>(Adapter);
+
             // todo add objects from input list
 
             _isCreated = 1;
         }
+
+        public NodePositionAxisComparer<T> AxisComprarer;
 
         public bool IsCreated => _isCreated == 1;
 
@@ -145,7 +149,7 @@ namespace SimpleScene.Util.ssBVH
             var node = Nodes.GetItemPtr<Node>(index);
 
             // todo: stored pointer needs to be updated if location in Nodes array changes (remove etc)
-            node->BaseAddress = node;
+            node->Ptr = node;
 
             return node;
         }
@@ -230,7 +234,7 @@ namespace SimpleScene.Util.ssBVH
                 var maxdepth = refitNodes.Max(n => n.Depth);
                 var sweepNodes = refitNodes.Where(n => n.Depth == maxdepth).ToList();
                 sweepNodes.ForEach(n => refitNodes.Remove(n));
-                sweepNodes.ForEach(n => Node.TryRotate(this, n.BaseAddress));
+                sweepNodes.ForEach(n => Node.TryRotate(this, n.Ptr));
             }
         }
 
@@ -299,7 +303,7 @@ namespace SimpleScene.Util.ssBVH
 
         internal void Add(Node node, T newOb, ref BoundingBox newObBox, float newObSAH)
         {
-            AddObjectToNode(node.BaseAddress, newOb, ref newObBox, newObSAH);
+            AddObjectToNode(node.Ptr, newOb, ref newObBox, newObSAH);
         }
 
         internal void AddObjectToNode(Node* node, T newOb, ref BoundingBox newObBox, float newObSAH)
@@ -343,12 +347,27 @@ namespace SimpleScene.Util.ssBVH
 
             Adapter.MapLeaf(newOb, *node);
 
-            node->RefitVolume(Adapter);
+            RefitVolume(node);
 
             SplitIfNecessary(node);
             //node->SplitIfNecessary(Adapter);
         }
 
+        internal bool RefitVolume(Node* node) 
+        {
+            var oldbox = node->Box;
+            ComputeVolume(node);
+
+            if (!node->Box.Equals(oldbox))
+            {
+                if (node->Parent != null)
+                {
+                    node->Parent->ChildRefit(Adapter);
+                }
+                return true;
+            }
+            return false;
+        }
 
         internal void RemoveObjectFromNode(Node node, T newOb)
         {
@@ -362,9 +381,9 @@ namespace SimpleScene.Util.ssBVH
 
             //Items.Remove(newOb);
 
-            if (!IsEmpty(node.BaseAddress))
+            if (!IsEmpty(node.Ptr))
             {
-                node.RefitVolume(Adapter);
+                RefitVolume(node.Ptr);
             }
             else
             {
@@ -373,8 +392,24 @@ namespace SimpleScene.Util.ssBVH
                 {
                     node.BucketIndex = -1;
                     //Items = null;
-                    RemoveLeaf(node.Parent, node.BaseAddress);
+                    RemoveLeaf(node.Parent, node.Ptr);
                     node.Parent = null;
+                }
+            }
+        }
+
+
+        public void Refit_ObjectChanged(Node node, ref T obj)
+        {          
+            if (!node.IsLeaf)
+            {
+                throw new Exception("dangling leaf!");
+            }
+            if (RefitVolume(node.Ptr))
+            {
+                if (node.Parent != null)
+                {
+                    refitNodes.Add(*node.Parent);
                 }
             }
         }
@@ -414,10 +449,10 @@ namespace SimpleScene.Util.ssBVH
 
             if (node->BucketIndex != -1)
             {
-                node->Left->Parent = node->BaseAddress;
+                node->Left->Parent = node->Ptr;
 
                 // reassign child parents..
-                node->Right->Parent = node->BaseAddress;
+                node->Right->Parent = node->Ptr;
 
                 // this reassigns depth for our children
                 node->SetDepth(Adapter, node->Depth); 
