@@ -56,9 +56,10 @@ public class HullTester : MonoBehaviour
 
                     if (shape.TransformId == id && t.hasChanged && (Vector3)shape.Transform.pos != t.position)
                     {
-                        shape.Transform = new RigidTransform(t.rotation, t.position);                        
+                        shape.Transform = new RigidTransform(t.rotation, t.position);
+                        _bvh.QueueForUpdate(shape);
                     }
-                    _bvh.QueueForUpdate(shape);
+                    
                 }
             }
         }

@@ -3,10 +3,12 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Unity.Mathematics;
 
 namespace SimpleScene
 {
+    [DebuggerDisplay("AABB: {Min},{Max}")]
     public struct BoundingBox : IEquatable<BoundingBox>
     {
         public float3 Min;
@@ -106,13 +108,13 @@ namespace SimpleScene
 
         internal void ExpandToFit(BoundingBox b)
         {
-            if (b.Min.x < this.Min.x) { this.Min.x = b.Min.x; }
-            if (b.Min.y < this.Min.y) { this.Min.y = b.Min.y; }
-            if (b.Min.z < this.Min.z) { this.Min.z = b.Min.z; }
+            if (b.Min.x < Min.x) { Min.x = b.Min.x; }
+            if (b.Min.y < Min.y) { Min.y = b.Min.y; }
+            if (b.Min.z < Min.z) { Min.z = b.Min.z; }
 
-            if (b.Max.x > this.Max.x) { this.Max.x = b.Max.x; }
-            if (b.Max.y > this.Max.y) { this.Max.y = b.Max.y; }
-            if (b.Max.z > this.Max.z) { this.Max.z = b.Max.z; }
+            if (b.Max.x > Max.x) { Max.x = b.Max.x; }
+            if (b.Max.y > Max.y) { Max.y = b.Max.y; }
+            if (b.Max.z > Max.z) { Max.z = b.Max.z; }
         }
 
         public BoundingBox ExpandedBy(BoundingBox b)
@@ -131,7 +133,7 @@ namespace SimpleScene
 
         public void ExpandBy(BoundingBox b)
         {
-            this = this.ExpandedBy(b);
+            this = ExpandedBy(b);
         }
 
         public static BoundingBox FromSphere(float3 pos, float radius)

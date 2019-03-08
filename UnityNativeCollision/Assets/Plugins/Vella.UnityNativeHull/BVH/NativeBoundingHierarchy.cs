@@ -390,7 +390,6 @@ namespace SimpleScene.Util.ssBVH
                 var sweepNodes = _refitNodes.Where(n => n.Depth == maxdepth).ToList();
 
                 sweepNodes.ForEach(n => _refitNodes.Remove(n));
-
                 sweepNodes.ForEach(n => TryRotate(n.Ptr));
             }
         }
@@ -660,7 +659,7 @@ namespace SimpleScene.Util.ssBVH
                 }
 
                 var diff = (mySa - bestRot.Sah) / mySa;
-                if (diff < 0.1f)
+                if (diff <= 0)
                 {
                     Debug.Log($"BVH no benefit ({diff})  {bestRot.Rot} from {mySa} to {bestRot.Sah}");
                     return; // the benefit is not worth the cost
@@ -890,6 +889,7 @@ namespace SimpleScene.Util.ssBVH
 
                 var leftSAH = SurfaceArea(left);
                 var rightSAH = SurfaceArea(right);
+
                 var sendLeftSAH = rightSAH + SurfaceArea(left->Box.ExpandedBy(newObBox)); // (L+N,R)
                 var sendRightSAH = leftSAH + SurfaceArea(right->Box.ExpandedBy(newObBox)); // (L,R+N)
                 var mergedLeftAndRightSAH = SurfaceArea(AabBofPair(left, right)) + newObSAH; // (L+R,N)
