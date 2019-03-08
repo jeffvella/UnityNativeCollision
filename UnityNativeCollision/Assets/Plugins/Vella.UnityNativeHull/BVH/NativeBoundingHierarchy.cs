@@ -11,6 +11,8 @@
 // see also:  Space Partitioning: Octree vs. BVH
 //            http://thomasdiewald.com/blog/?p=1488
 
+// http://dayabay.ihep.ac.cn/e/muon_simulation/chroma/bvh/
+
 // TODO: pick the best axis to split based on SAH, instead of the biggest
 // TODO: Switch SAH comparisons to use (SAH(A) * itemCount(A)) currently it just uses SAH(A)
 // TODO: when inserting, compare parent node SAH(A) * itemCount to sum of children, to see if it is better to not split at all
@@ -19,8 +21,16 @@
 // TODO: add sphere traversal
 // TODO: implement SBVH spacial splits
 
-//        http://www.nvidia.com/docs/IO/77714/sbvh.pdf
+// Surface Area Heuristic (SAH)
+// https://benedikt-bitterli.me/bvh-report.pdf
+// https://pbrt.org/
+// https://link.springer.com/article/10.1007/BF01911006
+// http://www.nvidia.com/docs/IO/77714/sbvh.pdf
 
+
+// Ray http://psgraphics.blogspot.com/2016/02/new-simple-ray-box-test-from-andrew.html
+// http://jcgt.org/published/0007/03/04/
+// https://medium.com/@bromanz/another-view-on-the-classic-ray-aabb-intersection-algorithm-for-bvh-traversal-41125138b525
 
 using System;
 using System.Collections.Generic;
@@ -28,12 +38,13 @@ using System.Diagnostics;
 using System.Linq;
 using Unity.Collections;
 using Unity.Mathematics;
+using UnityEngine;
 using Vella.Common;
 using Debug = UnityEngine.Debug;
 
 namespace SimpleScene.Util.ssBVH
 {
-    [DebuggerDisplay("Node<{0}>:{1}")]
+    [DebuggerDisplay("Node {NodeNumber}: Leaf={IsLeaf} Depth={Depth} Box={Box} HasParent={HasParent}")]
     public unsafe struct Node : IEquatable<Node>
     {
         public BoundingBox Box;
@@ -109,7 +120,7 @@ namespace SimpleScene.Util.ssBVH
 
         private NativeBuffer<int> _unusedBucketIndices;
 
-        private readonly IndexedRotations _rotations;
+        //private readonly IndexedRotations _rotations;
         private readonly NodePositionAxisComparer<T> _axisComparer;
  
 
@@ -122,7 +133,7 @@ namespace SimpleScene.Util.ssBVH
             // WARNING! currently this must be 1 to use dynamic BVH updates
             _maxLeaves = maxPerLeft;
 
-            _rotations = new IndexedRotations();
+            //_rotations = new IndexedRotations();
             _map = new NativeHashMap<T, Node>(MaxNodes, Allocator.Persistent);
             _nodes = new NativeBuffer<Node>(MaxNodes, Allocator.Persistent);
             _buckets = new NativeBuffer<NativeBuffer<T>>(MaxBuckets, Allocator.Persistent);
@@ -379,11 +390,12 @@ namespace SimpleScene.Util.ssBVH
                 var sweepNodes = _refitNodes.Where(n => n.Depth == maxdepth).ToList();
 
                 sweepNodes.ForEach(n => _refitNodes.Remove(n));
+
                 sweepNodes.ForEach(n => TryRotate(n.Ptr));
             }
         }
 
-        internal static float Sa(BoundingBox box)
+        internal static float SurfaceArea(BoundingBox box)
         {
             var xSize = box.Max.x - box.Min.x;
             var ySize = box.Max.y - box.Min.y;
@@ -391,7 +403,7 @@ namespace SimpleScene.Util.ssBVH
             return 2.0f * (xSize * ySize + xSize * zSize + ySize * zSize);
         }
 
-        internal static float Sa(ref BoundingBox box)
+        internal static float SurfaceArea(ref BoundingBox box)
         {
             var xSize = box.Max.x - box.Min.x;
             var ySize = box.Max.y - box.Min.y;
@@ -399,7 +411,7 @@ namespace SimpleScene.Util.ssBVH
             return 2.0f * (xSize * ySize + xSize * zSize + ySize * zSize);
         }
 
-        internal static float Sa(Node* node)
+        internal static float SurfaceArea(Node* node)
         {
             var xSize = node->Box.Max.x - node->Box.Min.x;
             var ySize = node->Box.Max.y - node->Box.Min.y;
@@ -407,7 +419,7 @@ namespace SimpleScene.Util.ssBVH
             return 2.0f * (xSize * ySize + xSize * zSize + ySize * zSize);
         }
 
-        internal float Sa(T obj)
+        internal float SurfaceArea(T obj)
         {
             var radius = obj.Radius;
             var size = radius * 2;
@@ -421,33 +433,32 @@ namespace SimpleScene.Util.ssBVH
             return box;
         }
 
-        internal static float SAofPair(Node nodea, Node nodeb)
+        internal static float SurfaceArea(Node nodea, Node nodeb)
         {
             var box = nodea.Box;
             box.ExpandToFit(nodeb.Box);
-            return Sa(ref box);
+            return SurfaceArea(ref box);
         }
 
-        internal static float SAofPair(BoundingBox boxa, BoundingBox boxb)
+        internal static float SurfaceArea(BoundingBox boxa, BoundingBox boxb)
         {
             var pairbox = boxa;
             pairbox.ExpandToFit(boxb);
-            return Sa(ref pairbox);
+            return SurfaceArea(ref pairbox);
         }
 
-        internal float SAofList(NativeBuffer<T> items, int startIndex, int itemCount)
+        internal float SurfaceArea(NativeBuffer<T> items, int startIndex, int itemCount)
         {
-            var box = AabBofObj(items[0]);
+            var box = CalculateBox(items[0]);
             for (var i = startIndex + 1; i < itemCount; i++)
             {
-                var newbox = AabBofObj(items[i]);
+                var newbox = CalculateBox(items[i]);
                 box.ExpandBy(newbox);
             }
-
-            return Sa(box);
+            return SurfaceArea(box);
         }
 
-        internal BoundingBox AabBofObj(T obj)
+        internal BoundingBox CalculateBox(T obj)
         {
             var radius = obj.Radius;
             BoundingBox box;
@@ -578,8 +589,8 @@ namespace SimpleScene.Util.ssBVH
         {
             split.Items.Sort(_axisComparer, axis);
 
-            var leftSah = SAofList(split.Items, split.LeftStartIndex, split.LeftItemCount);
-            var rightSah = SAofList(split.Items, split.RightStartIndex, split.RightItemCount);
+            var leftSah = SurfaceArea(split.Items, split.LeftStartIndex, split.LeftItemCount);
+            var rightSah = SurfaceArea(split.Items, split.RightStartIndex, split.RightItemCount);
             var newSah = leftSah * split.LeftItemCount + rightSah * split.RightItemCount;
 
             if (split.HasValue == 0 || newSah < split.Sah)
@@ -598,8 +609,6 @@ namespace SimpleScene.Util.ssBVH
         {
             // if we are not a grandparent, then we can't rotate, so queue our parent and bail out
             //var isLeaf = node->IsLeaf;
-            var left = node->Left;
-            var right = node->Right;
 
             if (node->IsLeaf || !node->Left->IsLeaf || !node->Right->IsLeaf)
             {
@@ -614,21 +623,22 @@ namespace SimpleScene.Util.ssBVH
             // for each rotation, check that there are grandchildren as necessary (aka not a leaf)
             // then compute total SAH cost of our branches after the rotation.
 
-            var mySa = Sa(node->Left) + Sa(node->Right);
-            var bestRot = new RotOpt(float.MaxValue, Rot.None);
-            for (var i = 0; i < _rotations.Length; i++)
-            {
-                var rot = RotOpt2(node, _rotations[i], mySa);
-                if (rot.Sah < bestRot.Sah)
-                {
-                    bestRot = rot;
-                }
-            }
+            var mySa = SurfaceArea(node->Left) + SurfaceArea(node->Right);
+
+            var bestRot = new RotOpt(float.MaxValue, Rot.None);    
+            
+            //FindBestRotation(node, Rot.None, mySa, ref bestRot);
+            FindBestRotation(node, Rot.LRl, mySa, ref bestRot);
+            FindBestRotation(node, Rot.LRr, mySa, ref bestRot);
+            FindBestRotation(node, Rot.RLl, mySa, ref bestRot);
+            FindBestRotation(node, Rot.RLr, mySa, ref bestRot);
+            FindBestRotation(node, Rot.LlRl, mySa, ref bestRot);
+            FindBestRotation(node, Rot.LlRr, mySa, ref bestRot);
 
             // perform the best rotation...            
-            if (bestRot.Rot != Rot.None)
+            if (bestRot.Rot == Rot.None)
             {
-                Debug.Log($"BVH bestrot == none {bestRot.Rot} from {mySa} to {bestRot.Sah}");
+                Debug.Log($"BVH bestrot {bestRot.Rot} from {mySa} to {bestRot.Sah}");
 
                 // if the best rotation is no-rotation... we check our parents anyhow..                
                 if (node->Parent != null)
@@ -644,12 +654,13 @@ namespace SimpleScene.Util.ssBVH
             {
                 if (node->Parent != null)
                 {
-                    _refitNodes.Add(*node->Parent);
+                    TryRotate(node->Parent);
+                    //_refitNodes.Add(*node->Parent);
                     //_refitNodes.Add(*node->Parent);
                 }
 
                 var diff = (mySa - bestRot.Sah) / mySa;
-                if (diff < 0.3f)
+                if (diff < 0.1f)
                 {
                     Debug.Log($"BVH no benefit ({diff})  {bestRot.Rot} from {mySa} to {bestRot.Sah}");
                     return; // the benefit is not worth the cost
@@ -662,6 +673,7 @@ namespace SimpleScene.Util.ssBVH
                 //  2. update the depth (if child-to-grandchild)
                 //  3. update the parent pointers
                 //  4. refit the boundary box
+
                 Node* swap = null;
                 switch (bestRot.Rot)
                 {
@@ -741,6 +753,15 @@ namespace SimpleScene.Util.ssBVH
             }
         }
 
+        private static void FindBestRotation(Node* node, Rot r, float mySa, ref RotOpt bestRot)
+        {
+            var rot = RotOpt2(node, r, mySa);
+            if (rot.Sah < bestRot.Sah)
+            {
+                bestRot = rot;
+            }
+        }
+
         private static RotOpt RotOpt2(Node* node, Rot rot, float mySa)
         {
             switch (rot)
@@ -751,33 +772,33 @@ namespace SimpleScene.Util.ssBVH
                 case Rot.LRl:
                     return node->Right->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
-                        : new RotOpt(Sa(node->Right->Left) + Sa(AabBofPair(node->Left, node->Right->Right)), rot);
+                        : new RotOpt(SurfaceArea(node->Right->Left) + SurfaceArea(AabBofPair(node->Left, node->Right->Right)), rot);
 
                 case Rot.LRr:
                     return node->Right->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
-                        : new RotOpt(Sa(node->Right->Right) + Sa(AabBofPair(node->Left, node->Right->Left)), rot);
+                        : new RotOpt(SurfaceArea(node->Right->Right) + SurfaceArea(AabBofPair(node->Left, node->Right->Left)), rot);
 
                 case Rot.RLl:
                     return node->Left->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
-                        : new RotOpt(Sa(AabBofPair(node->Right, node->Left->Right)) + Sa(node->Left->Left), rot);
+                        : new RotOpt(SurfaceArea(AabBofPair(node->Right, node->Left->Right)) + SurfaceArea(node->Left->Left), rot);
 
                 case Rot.RLr:
                     return node->Left->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
-                        : new RotOpt(Sa(AabBofPair(node->Right, node->Left->Left)) + Sa(node->Left->Right), rot);
+                        : new RotOpt(SurfaceArea(AabBofPair(node->Right, node->Left->Left)) + SurfaceArea(node->Left->Right), rot);
 
                 // grandchild to grandchild rotations
                 case Rot.LlRr:
                     return node->Left->IsLeaf || node->Right->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
-                        : new RotOpt(Sa(AabBofPair(node->Right->Right, node->Left->Right)) + Sa(AabBofPair(node->Right->Left, node->Left->Left)), rot);
+                        : new RotOpt(SurfaceArea(AabBofPair(node->Right->Right, node->Left->Right)) + SurfaceArea(AabBofPair(node->Right->Left, node->Left->Left)), rot);
 
                 case Rot.LlRl:
                     return node->Left->IsLeaf || node->Right->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
-                        : new RotOpt(Sa(AabBofPair(node->Right->Left, node->Left->Right)) + Sa(AabBofPair(node->Left->Left, node->Right->Right)), rot);
+                        : new RotOpt(SurfaceArea(AabBofPair(node->Right->Left, node->Left->Right)) + SurfaceArea(AabBofPair(node->Left->Left, node->Right->Right)), rot);
                
                 default:
                     throw new NotImplementedException("Missing implementation for BVH Rotation SAH Computation .. " + rot);
@@ -835,7 +856,7 @@ namespace SimpleScene.Util.ssBVH
             }
 
             var box = BoundingBox.FromSphere(newOb.Position, newOb.Radius);
-            var boxSah = Sa(ref box);
+            var boxSah = SurfaceArea(ref box);
             AddObjectToNode(_rootNode, newOb, ref box, boxSah);
         }
 
@@ -867,11 +888,11 @@ namespace SimpleScene.Util.ssBVH
                 var left = node->Left;
                 var right = node->Right;
 
-                var leftSAH = Sa(left);
-                var rightSAH = Sa(right);
-                var sendLeftSAH = rightSAH + Sa(left->Box.ExpandedBy(newObBox)); // (L+N,R)
-                var sendRightSAH = leftSAH + Sa(right->Box.ExpandedBy(newObBox)); // (L,R+N)
-                var mergedLeftAndRightSAH = Sa(AabBofPair(left, right)) + newObSAH; // (L+R,N)
+                var leftSAH = SurfaceArea(left);
+                var rightSAH = SurfaceArea(right);
+                var sendLeftSAH = rightSAH + SurfaceArea(left->Box.ExpandedBy(newObBox)); // (L+N,R)
+                var sendRightSAH = leftSAH + SurfaceArea(right->Box.ExpandedBy(newObBox)); // (L,R+N)
+                var mergedLeftAndRightSAH = SurfaceArea(AabBofPair(left, right)) + newObSAH; // (L+R,N)
 
                 // Doing a merge-and-pushdown can be expensive, so we only do it if it's notably better
                 const float MERGE_DISCOUNT = 0.3f;
@@ -1437,16 +1458,30 @@ namespace SimpleScene.Util.ssBVH
         int Length { get; }
     }
 
-    public struct IndexedRotations : IReadIndexed<Rot>
-    {
-        public const int ItemCount = 7;
+    //public struct IndexedRotations : IReadIndexed<Rot>
+    //{
+    //    public const int ItemCount = 7;
 
-        private unsafe fixed int _values[ItemCount];
+    //    private unsafe fixed int _values[ItemCount];
 
-        public unsafe Rot this[int index] => (Rot)_values[index];
+    //    unsafe IndexedRotations()
+    //    {
+    //        for (int i = 0; i < ItemCount; i++)
+    //        {        
+    //            _values[i] = i;               
+    //        }
+    //    }
 
-        public int Length => ItemCount;
-    }
+    //    public unsafe Rot this[int index]
+    //    {
+    //        get
+    //        {
+    //            return (Rot)_values[index];
+    //        }
+    //    }
+
+    //    public int Length => ItemCount;
+    //}
 
     public enum Axis
     {
