@@ -79,17 +79,18 @@ namespace Vella.Common
 
         public bool RemoveAt(int index)
         {
-            if (index > 0 && index < _maxIndex)
-            {   
-                // Shuffle forward every item after the removed index
-                for (int i = index + 1; i < _maxIndex; i++)
-                {
-                    _buffer.SetItem(i - 1, _buffer.GetItem<T>(i));          
-                }
-                _maxIndex--;
-                return true;
+
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (index < 0 || index > _maxIndex)
+                return false;
+#endif
+            // Shuffle forward every item after the removed index
+            for (int i = index + 1; i < _maxIndex; i++)
+            {
+                _buffer.SetItem(i - 1, _buffer.GetItem<T>(i));          
             }
-            return false;
+            _maxIndex--;
+            return true;
         }
 
         /// <summary>
@@ -98,7 +99,21 @@ namespace Vella.Common
         /// </summary>  
         public void RemoveAtSwapBack(int index)
         {
+            if (index == 0 && Length == 1)
+            {
+                _maxIndex--;
+                return;
+            }
             _buffer.SetItem(index, _buffer.GetItem<T>(--_maxIndex));
+        }
+
+        /// <summary>
+        /// Returns the last element and decrements the element count without clearing
+        /// the removed data (it may be overwritten by subsequent add operations)
+        /// </summary> 
+        public T Pop()
+        {
+            return _buffer.GetItem<T>(_maxIndex--);
         }
 
         public int IndexOf(T item)
@@ -109,6 +124,11 @@ namespace Vella.Common
                     return i;
             }
             return -1;
+        }
+
+        public bool Contains(T bucketIndex)
+        {
+            return IndexOf(bucketIndex) != -1;
         }
 
         public void Reverse()   
@@ -140,6 +160,17 @@ namespace Vella.Common
         {
             NativeBuffer.Clear<T>(_buffer);
             _maxIndex = -1;
+        }
+
+        public void SetLength(int itemCount)
+        {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (itemCount < 0 || itemCount > Capacity)
+            {
+                throw new IndexOutOfRangeException($"{nameof(SetLength)} with itemCount '{itemCount}' failed. Range: 0-{Capacity-1}");
+            }
+#endif
+            _maxIndex = itemCount - 1;
         }
 
         public T[] ToArray() => _buffer.ToArray<T>(Length);
@@ -253,6 +284,26 @@ namespace Vella.Common
 
             public ref T Current => ref _source._buffer.AsRef<T>(_index);
         }
+
+        public unsafe void Remove<TU>(TU* elementPtr) where TU : unmanaged
+        {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (elementPtr == null)
+                throw new ArgumentNullException();
+#endif
+            var ptr = (ulong)elementPtr;
+            var bufferPtr = (ulong)_buffer.GetUnsafeBufferPointerWithoutChecks();
+            var offset = ptr - bufferPtr;
+
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (offset > (ulong)CapacityBytes)
+                throw new ArgumentOutOfRangeException($"Unable to t remove element with '{offset}' offset because it's out of range (0-{CapacityBytes})");
+#endif
+
+            int index = (int)(offset / (ulong)_buffer.itemSize);
+            RemoveAtSwapBack(index);
+        }
+
     }
 
     public static class StructComparer<T> where T : struct

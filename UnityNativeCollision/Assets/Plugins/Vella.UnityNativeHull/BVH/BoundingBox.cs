@@ -143,7 +143,6 @@ namespace SimpleScene
             box.Max.y = pos.y + radius;
             box.Min.z = pos.z - radius;
             box.Max.z = pos.z + radius;
-
             return box;
         }
 

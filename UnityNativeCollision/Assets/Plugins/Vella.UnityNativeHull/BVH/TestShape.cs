@@ -8,8 +8,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using UnityEngine;
 using Vella.UnityNativeHull;
-
-
+using BoundingSphere = SimpleScene.BoundingSphere;
 
 
 [DebuggerDisplay("TestShape: Id={TransformId}")]
@@ -17,6 +16,78 @@ public struct TestShape : IBoundingHierarchyNode, IEquatable<TestShape>
 {
     //public Transform Transform;
     public int TransformId;
+
+    public bool HasChanged => true;
+
+    public float3 Position => Transform.pos;
+
+    public float Radius => BoundingSphere.radius;
+
+    public RigidTransform Transform;
+    public NativeHull Hull;
+    public BoundingBox BoundingBox;
+    public BoundingSphere BoundingSphere;
+
+    public bool Equals(TestShape other)
+    {
+        return TransformId == other.TransformId;
+    }
+
+    public override bool Equals(object obj)
+    {
+        return obj is TestShape cast && cast.Equals(this);
+    }
+
+    public override int GetHashCode()
+    {
+        return TransformId;
+    }
+
+    public bool Equals(IBoundingHierarchyNode other)
+    {
+        return Equals((TestShape)other);
+    }
+
+    //public void SetTransform(RigidTransform rigidTransform)
+    //{
+
+    //    Transform = rigidTransform;
+    //}
+
+    //public void SetTransform()
+    //{
+    //    HasChanged = 0;
+    //}
+
+    //public ulong LastUpdatedFrame;
+
+    //public bool CheckForChanges()
+    //{
+    //    var frame = (ulong)Time.frameCount;
+    //    if (LastUpdatedFrame != frame)
+    //    {
+    //        unchecked
+    //        {
+    //            LastUpdatedFrame = frame;
+    //        }
+
+    //        var t = UnityEngine.GameObject.Find(TransformId.ToString())?.transform ?? null;
+
+    //        if (t != null && (t.position != (Vector3)Transform.pos || t.rotation != Transform.rot))
+    //        {
+    //            HasChanged = 1;
+    //            Transform = new RigidTransform(t.rotation, t.position);
+    //            return true;
+    //        }
+    //        else
+    //        {
+    //            HasChanged = 0;                
+    //        }
+    //    }
+    //    return false;
+    //}
+
+
 
     //public bool HasChanged()
     //{
@@ -32,80 +103,9 @@ public struct TestShape : IBoundingHierarchyNode, IEquatable<TestShape>
 
     //public bool HasChanged => UnityEngine.GameObject.Find(TransformId.ToString())?.transform.hasChanged ?? false;
 
-    private int _hasChanged;
+    //private int _hasChanged;
 
-    public unsafe ref int HasChanged => ref *(int*)UnsafeUtility.AddressOf(ref _hasChanged);
-
-    public float3 Position => Transform.pos;
-    public float Radius => BoundingSphere.radius;
-
-    public NativeHull Hull;
-
-    public BoundingBox BoundingBox;
-
-    public SimpleScene.BoundingSphere BoundingSphere;
-
-    public void SetTransform(RigidTransform rigidTransform)
-    {
-        HasChanged = 1;
-        Transform = rigidTransform;
-    }
-
-    public void SetTransform()
-    {
-        HasChanged = 0;
-    }
-
-    public RigidTransform Transform;
-
-    public ulong LastUpdatedFrame;
-
-    public bool CheckForChanges()
-    {
-        var frame = (ulong)Time.frameCount;
-        if (LastUpdatedFrame != frame)
-        {
-            unchecked
-            {
-                LastUpdatedFrame = frame;
-            }
-
-            var t = UnityEngine.GameObject.Find(TransformId.ToString())?.transform ?? null;
-
-            if (t != null && (t.position != (Vector3)Transform.pos || t.rotation != Transform.rot))
-            {
-                HasChanged = 1;
-                Transform = new RigidTransform(t.rotation, t.position);
-                return true;
-            }
-            else
-            {
-                HasChanged = 0;                
-            }
-        }
-        return false;
-    }
-
-    public bool Equals(TestShape other)
-    {
-        return TransformId == other.TransformId;
-    }
-
-    public override bool Equals(object obj)
-    {
-        return obj is TestShape cast && cast.Equals(this);     
-    }
-
-    public override int GetHashCode()
-    {
-        return TransformId;
-    }
-
-    public bool Equals(IBoundingHierarchyNode other)
-    {
-        return Equals((TestShape)other);
-    }
-
+    //public unsafe int HasChanged => ref *(int*)UnsafeUtility.AddressOf(ref _hasChanged);
 
 
     //public float3 CalculateMinMax()
