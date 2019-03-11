@@ -1,6 +1,6 @@
 # UnityNativeCollision #
 
-This project is an experimental C# implementation of SAT collision and polygon intersection for the Unity game engine. It's specifically designed to be compatable with Unity's Burst Compiler for performance. 
+This project is an experimental C# implementation of SAT collision and polygon intersection for the Unity game engine. It's specifically designed to be compatible with Unity's Burst Compiler for performance. 
 
 ##### Features:
 
