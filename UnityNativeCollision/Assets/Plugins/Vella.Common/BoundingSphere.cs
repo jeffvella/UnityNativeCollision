@@ -1,7 +1,7 @@
 ﻿using System;
 using Unity.Mathematics;
 
-namespace SimpleScene
+namespace Vella.Common
 {
     public struct BoundingSphere : IEquatable<BoundingSphere>
     {

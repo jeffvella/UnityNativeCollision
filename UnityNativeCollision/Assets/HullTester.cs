@@ -3,13 +3,14 @@ using Unity.Mathematics;
 using UnityEngine;
 using System.Linq;
 using System;
+using System.Diagnostics;
 using Unity.Collections;
 using Vella.Common;
 using Vella.UnityNativeHull;
-using SimpleScene;
-using SimpleScene.Util.ssBVH;
-using TMPro;
+using BoundingSphere = Vella.Common.BoundingSphere;
+using Debug = UnityEngine.Debug;
 using Random = Unity.Mathematics.Random;
+
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -27,7 +28,6 @@ public class HullTester : MonoBehaviour
     public bool DrawIntersection;
     public bool DrawClosestFace;
     public bool DrawClosestPoint;
-    public bool DrawBVH;
 
     [Header("Console Logging")]
     public bool LogCollisions;
@@ -36,38 +36,10 @@ public class HullTester : MonoBehaviour
 
     private Dictionary<int, TestShape> Hulls;
     private Dictionary<int, GameObject> GameObjects;
-    private NativeBoundingHierarchy<TestShape> _bvh;
-    private bool _removeClones;
-    public bool ForceRebuild { get; set; }
 
     void Update()
     {
         HandleTransformChanged();
-
-        foreach (var t in Transforms)
-        {
-            var id = t.GetInstanceID();
-
-            for (int i = 0; i < _bvh._buckets.Length; i++)
-            {
-                for (int j = 0; j < _bvh._buckets[i].Length; j++)
-                {
-                    ref var shape = ref _bvh._buckets[i][j];
-
-                    if (shape.TransformId == id && t.hasChanged && (Vector3)shape.Transform.pos != t.position)
-                    {
-                        shape.Transform = new RigidTransform(t.rotation, t.position);
-                        _bvh.QueueForUpdate(shape);
-                    }
-                    
-                }
-            }
-        }
-
-        _bvh.Optimize();
-
-        DrawBvh();
-
         HandleHullCollisions();
     }
 
@@ -252,14 +224,13 @@ public class HullTester : MonoBehaviour
         }
     }
 
-
     private void HandleTransformChanged()
     {
-        var transforms = Transforms.Distinct().Where(t => t.gameObject.activeSelf).ToList();
+        var transforms = Transforms.ToList().Distinct().Where(t => t.gameObject.activeSelf).ToList();
         var newTransformFound = false;
         var transformCount = 0;
 
-        if (!ForceRebuild && Hulls != null)
+        if (Hulls != null)
         {
             for (var i = 0; i < transforms.Count; i++)
             {
@@ -285,36 +256,10 @@ public class HullTester : MonoBehaviour
 
         EnsureDestroyed();
 
-        if (_bvh != null && _bvh.IsCreated)
-        {
-            _bvh.Dispose();
-        }
-
-        _bvh = new NativeBoundingHierarchy<TestShape>();
-
         Hulls = transforms.Where(t => t != null).ToDictionary(k => k.GetInstanceID(), CreateShape);
-
         GameObjects = transforms.Where(t => t != null).ToDictionary(k => k.GetInstanceID(), t => t.gameObject);
 
-        foreach (var shape in Hulls.Values)
-        {
-            _bvh.Add(shape);
-        }
-
-        ForceRebuild = false;
         SceneView.RepaintAll();
-    }
-
-    private void DrawBvh()
-    {
-        if (DrawBVH)
-        {
-            _bvh.TraverseNode(node =>
-            {
-                DebugDrawer.DrawDottedWireCube(node.Box.Center(), node.Box.Diff(), UnityColors.LightSlateGray.ToOpacity(0.6f));
-                return true;
-            });
-        }
     }
 
     private TestShape CreateShape(Transform t)
@@ -328,13 +273,13 @@ public class HullTester : MonoBehaviour
             bounds.Encapsulate(v);
         }
 
-        var sphere = SimpleScene.BoundingSphere.FromAABB(bounds);
+        var sphere = BoundingSphere.FromAABB(bounds);
 
         return new TestShape
         {
             BoundingBox = bounds,
             BoundingSphere = sphere,
-            TransformId = t.GetInstanceID(),
+            Id = t.GetInstanceID(),
             Transform = new RigidTransform(t.rotation, t.position),
             Hull = hull,
         };
@@ -394,134 +339,9 @@ public class HullTester : MonoBehaviour
                 kvp.Value.Hull.Dispose();
             }
         }
-
-        _bvh.Dispose();
+ 
         Hulls.Clear();
     }
 
-    public void OptimizeBVH()
-    {
-        _bvh.Optimize();
-    }
-
-    public void AddSingle()
-    {        
-        var first = Transforms.FirstOrDefault();
-        if (first != null)
-        {
-            var transforms = Transforms.Where(t => t != null && t != first).ToList();
-
-            var go = Instantiate(first.gameObject);
-            var i1 = UnityEngine.Random.Range(0, transforms.Count);
-            var i2 = UnityEngine.Random.Range(0, transforms.Count);
-
-            var t1 = transforms.ElementAt(i1);
-            var t2 = transforms.ElementAt(i2);
-
-            var dir = t2.position - t1.position;
-            var rand = UnityEngine.Random.insideUnitSphere * UnityEngine.Random.Range(0, dir.magnitude);
-            var pos = t1.position + rand + dir.normalized * (dir.magnitude/2f);
-
-            go.transform.position = pos;
-
-            var id = go.transform.GetInstanceID();
-            var shape = CreateShape(go.transform);
-
-            Hulls.Add(id, shape);
-            GameObjects.Add(id, go);
-            Transforms.Add(go.transform);
-
-            _bvh.Add(shape);
-        }
-    }
-
-    public void RemoveSingle()
-    {
-        var first = Transforms.FirstOrDefault(t => t != null && t.name.ToLowerInvariant().Contains("clone"));
-        if (first != null)
-        {
-            Transforms.Remove(first);
-            DestroyImmediate(first.gameObject);
-        }
-    }
-
-    public void RemoveFromBvh()
-    {
-        foreach (var t in Transforms)
-        {
-            if (t != null && t.name.ToLowerInvariant().Contains("clone"))
-            {
-                var shape = Hulls[t.GetInstanceID()];
-                if (_bvh.TryGetLeaf(shape, out Node node))
-                {
-                    Debug.Log($"Removing {t.name} from bvh");
-                    _bvh.Remove(shape);
-                    break;
-                }
-            }
-        }
-    }
-
-    public void RemoveClones()
-    {
-        var result = new List<Transform>();
-        foreach (var t in Transforms.ToList())
-        {
-            if (t.name.ToLowerInvariant().Contains("clone"))
-            {
-                DestroyImmediate(t.gameObject);                
-            }
-            else
-            {
-                result.Add(t);
-            }
-        }
-        Transforms = result;
-    }
 }
-
-#if UNITY_EDITOR
-
-[CustomEditor(typeof(HullTester))]
-[CanEditMultipleObjects]
-public class HullTester_Editor : Editor
-{
-    public override void OnInspectorGUI()
-    {
-        DrawDefaultInspector();
-
-        foreach (var targ in targets.Cast<HullTester>())
-        {
-            if (GUILayout.Button("Optimize BVH"))
-            {
-                targ.OptimizeBVH();
-                SceneView.RepaintAll();
-            }
-            if (GUILayout.Button("Rebuild BVH"))
-            {
-                targ.ForceRebuild = true;
-            }
-            if (GUILayout.Button("Add Clone"))
-            {
-                targ.AddSingle();
-                SceneView.RepaintAll();
-            }
-            if (GUILayout.Button("Remove from Bvh"))
-            {
-                targ.RemoveFromBvh();
-                SceneView.RepaintAll();
-            }
-            if (GUILayout.Button("Remove Clones (Rebuild)"))
-            {
-                targ.RemoveClones();
-                SceneView.RepaintAll();
-            }
-        }
-
-        
-    }
-}
-
-#endif
-
 

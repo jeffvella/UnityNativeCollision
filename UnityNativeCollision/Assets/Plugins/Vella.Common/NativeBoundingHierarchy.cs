@@ -1,34 +1,22 @@
-﻿// Copyright(C) David W. Jeske, 2014, and released to the public domain. 
-//
-// Dynamic BVH (Bounding Volume Hierarchy) using incremental refit and tree-rotations
-//
-// initial BVH build based on: Bounding Volume Hierarchies (BVH) – A brief tutorial on what they are and how to implement them
-//              http://www.3dmuve.com/3dmblog/?p=182
-//
-// Dynamic Updates based on: "Fast, Effective BVH Updates for Animated Scenes" (Kopta, Ize, Spjut, Brunvand, David, Kensler)
-//              https://github.com/jeske/SimpleScene/blob/master/SimpleScene/Util/ssBVH/docs/BVH_fast_effective_updates_for_animated_scenes.pdf
-//
-// see also:  Space Partitioning: Octree vs. BVH
-//            http://thomasdiewald.com/blog/?p=1488
+﻿
+// BVH for Unity Burst by Jeffrey Vella;
+// I dedicate any and all copyright interest in this software to the public domain. I make this dedication 
+// for the benefit of the public at large and to the detriment of my heirs and successors. I intend this
+// dedication to be an overt act of relinquishment in perpetuity of all present and future rights to 
+// this software under copyright law.
 
-// http://dayabay.ihep.ac.cn/e/muon_simulation/chroma/bvh/
+// Based on Dynamic BVH (Bounding Volume Hierarchy) using incremental refit and tree-rotations
+// Copyright David W. Jeske, 2014 and released to public domain.
+// https://github.com/jeske/SimpleScene/tree/master/SimpleScene/Util/ssBVH
 
-// TODO: pick the best axis to split based on SAH, instead of the biggest
-// TODO: Switch SAH comparisons to use (SAH(A) * itemCount(A)) currently it just uses SAH(A)
-// TODO: when inserting, compare parent node SAH(A) * itemCount to sum of children, to see if it is better to not split at all
-// TODO: implement node merge/split, to handle updates when LEAF_OBJ_MAX > 1
-// TODO: handle merge/split when LEAF_OBJ_MAX > 1 and objects move
-// TODO: add sphere traversal
-// TODO: implement SBVH spacial splits
-
-// Surface Area Heuristic (SAH)
+// Surface Area Heuristic (SAH):
 // https://benedikt-bitterli.me/bvh-report.pdf
 // https://pbrt.org/
 // https://link.springer.com/article/10.1007/BF01911006
 // http://www.nvidia.com/docs/IO/77714/sbvh.pdf
 
-
-// Ray http://psgraphics.blogspot.com/2016/02/new-simple-ray-box-test-from-andrew.html
+// Rays:
+// http://psgraphics.blogspot.com/2016/02/new-simple-ray-box-test-from-andrew.html
 // http://jcgt.org/published/0007/03/04/
 // https://medium.com/@bromanz/another-view-on-the-classic-ray-aabb-intersection-algorithm-for-bvh-traversal-41125138b525
 
@@ -37,14 +25,15 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using UnityEngine;
 using Vella.Common;
 using Debug = UnityEngine.Debug;
 
-namespace SimpleScene.Util.ssBVH
+namespace Vella.Common
 {
-    [DebuggerDisplay("Node {NodeNumber}: Leaf={IsLeaf} Depth={Depth} Box={Box} HasParent={HasParent}")]
+    [DebuggerDisplay("Node {NodeNumber}: IsValid={IsValid} Depth={Depth} Leaf={IsLeaf} State{State}")]
     public unsafe struct Node : IEquatable<Node>
     {
         public BoundingBox Box;
@@ -55,30 +44,31 @@ namespace SimpleScene.Util.ssBVH
         public int Depth;
         public int NodeNumber;
         public int BucketIndex;
+        public NodeState State;
 
         public bool IsLeaf => BucketIndex != -1;
 
-        public bool HasParent => Parent != null;
+        public bool HasParent => (IntPtr)Parent != IntPtr.Zero;
 
-        public bool IsValid => (IntPtr)Ptr != IntPtr.Zero;
+        public bool IsValid => (IntPtr)Ptr != IntPtr.Zero && (IsValidLeafNode || IsValidBranchNode);
 
-        public bool Equals(Node other)
+        public bool IsValidBranchNode => !IsLeaf && (IntPtr)Left != IntPtr.Zero && (IntPtr)Right != IntPtr.Zero;
+
+        public bool IsValidLeafNode => IsLeaf && (IntPtr)Left == IntPtr.Zero && (IntPtr)Right == IntPtr.Zero;
+
+        public bool IsValidBranch => IsValid && (IsLeaf || Right->IsValidBranch && Left->IsValidBranch);
+
+        public bool Equals(Node other) => NodeNumber == other.NodeNumber;
+
+        public override bool Equals(object obj) => !ReferenceEquals(null, obj) && (obj is Node other && Equals(other));
+
+        public override int GetHashCode() => NodeNumber;
+
+        [Flags]
+        public enum NodeState
         {
-            return NodeNumber == other.NodeNumber;
-        }
-
-        public override bool Equals(object obj)
-        {
-            if (ReferenceEquals(null, obj))
-            {
-                return false;
-            }
-            return obj is Node other && Equals(other);
-        }
-
-        public override int GetHashCode()
-        {
-            return NodeNumber;
+            None = 0,
+            OptimizationQueued = 1
         }
     }
 
@@ -86,9 +76,12 @@ namespace SimpleScene.Util.ssBVH
     {
         public delegate bool NodeTest(BoundingBox box);
 
+
+        // Currently using fixed size collections,
+        // todo allow NativeBuffer to grow.
         public const int MaxBuckets = 100;
         public const int MaxItemsPerBucket = 100;
-        public const int MaxNodes = 100 ;
+        public const int MaxNodes = 1000 ;
 
         private Node* _rootNode;
         private int _isCreated;
@@ -104,43 +97,48 @@ namespace SimpleScene.Util.ssBVH
         private NativeHashMap<T, Node> _map;
 
         /// <summary>
-        /// Storage for all the <typeparamref name="T"/> objects, each group is linked to a leaf node.
+        /// Storage for all the <typeparamref name="T"/> objects, each group is linked to a leaf node via <see cref="_map"/>.
         /// </summary>
-        public NativeBuffer<NativeBuffer<T>> _buckets;
+        public NativeBuffer<NativeBuffer<T>> Buckets;
 
         /// <summary>
         /// Tree of nodes representing the structure from largest containing box to smallest box.
         /// </summary>
         private NativeBuffer<Node> _nodes;
 
-        /// <summary>
-        /// Nodes that need to have their volumes reevaluated.
-        /// </summary>
-        private HashSet<Node> _refitNodes = new HashSet<Node>();
-
         private NativeBuffer<int> _unusedBucketIndices;
+        private NativeBuffer<int> _unusedNodeIndices;
 
-        //private readonly IndexedRotations _rotations;
+        private NativeBuffer<Node> _refitQueue;
+
         private readonly NodePositionAxisComparer<T> _axisComparer;
- 
+        private readonly NodeDepthComparer _nodeDepthComparer;
 
         private NativeBoundingHierarchy() { }
 
         public NativeBoundingHierarchy(List<T> objects = null, int maxPerLeft = 1)
         {
-            // todo add objects from input list
+            // todo add objects from input list, more than 1 per leaf
 
             // WARNING! currently this must be 1 to use dynamic BVH updates
             _maxLeaves = maxPerLeft;
 
-            //_rotations = new IndexedRotations();
             _map = new NativeHashMap<T, Node>(MaxNodes, Allocator.Persistent);
             _nodes = new NativeBuffer<Node>(MaxNodes, Allocator.Persistent);
-            _buckets = new NativeBuffer<NativeBuffer<T>>(MaxBuckets, Allocator.Persistent);
             _unusedBucketIndices = new NativeBuffer<int>(MaxBuckets, Allocator.Persistent);
-            _rootNode = CreateNode();
+            _unusedNodeIndices = new NativeBuffer<int>(MaxBuckets, Allocator.Persistent);
+            _refitQueue = new NativeBuffer<Node>(MaxNodes, Allocator.Persistent);
+
+            // todo, Buckets to private and expose iterator.
+            Buckets = new NativeBuffer<NativeBuffer<T>>(MaxBuckets, Allocator.Persistent);
+
+            _nodeDepthComparer = new NodeDepthComparer();
             _axisComparer = new NodePositionAxisComparer<T>();
+
+            _rootNode = CreateNode();
             _isCreated = 1;
+
+            Debug.Assert(_rootNode->IsValid);
         }
 
         public void Dispose()
@@ -148,16 +146,16 @@ namespace SimpleScene.Util.ssBVH
             if (_isCreated != 1)
                  return;
        
-            if (_buckets.IsCreated)
+            if (Buckets.IsCreated)
             {
-                foreach (var item in _buckets)
+                foreach (var item in Buckets)
                 {
                     if (item.IsCreated)
                     {
                         item.Dispose();
                     }
                 }
-                _buckets.Dispose();
+                Buckets.Dispose();
             }
 
             if (_nodes.IsCreated)
@@ -169,18 +167,19 @@ namespace SimpleScene.Util.ssBVH
             {
                 _map.Dispose();
             }
-        }
+        }        
 
         internal Node* CreateNode(int bucketIndex = -1)
         {
-            // todo: stored pointer needs to be updated if location in Nodes array changes (remove etc)
-
-            if (_buckets.Length + 1 >= MaxItemsPerBucket)
+            if (Buckets.Length + 1 >= MaxItemsPerBucket)
             {
                 throw new InvalidOperationException("The maximum number of buckets has been reached");
             }
 
-            var index = _nodes.Add(new Node());
+            var index = _unusedNodeIndices.Length > 0
+                ? _unusedNodeIndices.Pop()
+                : _nodes.Add(new Node());
+
             var node = _nodes.GetItemPtr<Node>(index);
             node->Ptr = node;
             node->BucketIndex = bucketIndex == -1 ? GetOrCreateFreeBucket() : bucketIndex;
@@ -188,10 +187,26 @@ namespace SimpleScene.Util.ssBVH
             return node;
         }
 
+        public void FreeNode(Node* node)
+        {
+            node->Parent = null;
+            node->Ptr = null;
+            node->Left = null;
+            node->Right = null;
+            node->BucketIndex = -1;
+            node->Depth = 0;
+
+            var index = _nodes.IndexOf(node);
+
+            Debug.Assert((IntPtr)UnsafeUtility.AddressOf(ref _nodes[index]) == (IntPtr)node);
+
+            _unusedNodeIndices.Add(index);         
+        }
+
         public int GetOrCreateFreeBucket()
         {
             #if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (_buckets.Length + 1 >= MaxItemsPerBucket)
+            if (Buckets.Length + 1 >= MaxItemsPerBucket)
             {
                 throw new InvalidOperationException("The maximum number of buckets has been reached");
             }
@@ -201,7 +216,7 @@ namespace SimpleScene.Util.ssBVH
             {
                 return _unusedBucketIndices.Pop();
             }
-            return _buckets.Add(new NativeBuffer<T>(MaxItemsPerBucket, Allocator.Persistent));
+            return Buckets.Add(new NativeBuffer<T>(MaxItemsPerBucket, Allocator.Persistent));
         }
 
         public void FreeBucket(Node* node)
@@ -218,17 +233,21 @@ namespace SimpleScene.Util.ssBVH
 
         public ref NativeBuffer<T> GetBucket(int index)
         {
-            return ref _buckets[index];
+            return ref Buckets[index];
         }
 
         public ref NativeBuffer<T> GetBucket(Node* node)
         {
-            return ref _buckets[node->BucketIndex];
+            return ref Buckets[node->BucketIndex];
         }
 
         public ref NativeBuffer<T> GetBucket(Node node)
         {
-            return ref _buckets[node.BucketIndex];
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (node.BucketIndex < 0 || node.BucketIndex > Buckets.Length - 1)
+                throw new IndexOutOfRangeException($"Bucket index {node.BucketIndex} is outside valid range [0-{Buckets.Length - 1}]");
+#endif
+            return ref Buckets[node.BucketIndex];
         }
 
         /// <summary>
@@ -261,29 +280,50 @@ namespace SimpleScene.Util.ssBVH
             return _map.TryGetValue(item, out node);
         }
 
-        public bool QueueForUpdate(T item)
+        public bool QueueForOptimize(T item)
         {
             if (!TryGetLeaf(item, out Node node))
             {
                 return false;
-                //throw new Exception($"Item not found {item}!");
             }
             if (!node.IsLeaf)
             {
                 throw new Exception("dangling leaf!");
             }
-            if (RefitVolume(node.Ptr))
+            if (TryFindBetterNode(node.Ptr, item, out Node* bestNode))
             {
-                if (node.Parent != null)
+                MoveItemBetweenNodes(node.Ptr, bestNode, item);
+            }
+            else if (RefitVolume(node.Ptr))
+            {
+                if (bestNode->Parent != null)
                 {
-                    _refitNodes.Add(*node.Parent);
-                }
+                    _refitQueue.Add(node);
+                }                
             }
             return true;
         }
 
+        public List<Node> Traverse(BoundingBox volume)
+        {
+            return Traverse(box => box.IntersectsAABB(volume));
+        }
 
-        private void _traverse(Node curNode, NodeTest hitTest, List<Node> hitlist)
+        public List<Node> Traverse(NodeTest hitTest)
+        {
+            var hits = new List<Node>();
+            Traverse(*_rootNode, hitTest, hits);
+            return hits;
+        }
+
+        public List<Node> TraverseNodes(Func<Node, bool> hitTest)
+        {
+            var hits = new List<Node>();
+            Traverse(*_rootNode, hitTest, hits);
+            return hits;
+        }
+
+        private void Traverse(Node curNode, NodeTest hitTest, List<Node> hitlist)
         {
             if (!curNode.IsValid)
             {
@@ -295,17 +335,17 @@ namespace SimpleScene.Util.ssBVH
 
                 if (curNode.Left != null)
                 {
-                    _traverse(*curNode.Left, hitTest, hitlist);
+                    Traverse(*curNode.Left, hitTest, hitlist);
                 }
 
                 if (curNode.Right != null)
                 {
-                    _traverse(*curNode.Right, hitTest, hitlist);
+                    Traverse(*curNode.Right, hitTest, hitlist);
                 }
             }
         }
 
-        private void _traverse(Node curNode, Func<Node, bool> hitTest, List<Node> hitlist)
+        private void Traverse(Node curNode, Func<Node, bool> hitTest, List<Node> hitlist)
         {
             if (!curNode.IsValid || hitTest == null)
             {
@@ -318,64 +358,20 @@ namespace SimpleScene.Util.ssBVH
 
                 if (curNode.Left != null)
                 {
-                    _traverse(*curNode.Left, hitTest, hitlist);
+                    Traverse(*curNode.Left, hitTest, hitlist);
                 }
 
                 if (curNode.Right != null)
                 {
-                    _traverse(*curNode.Right, hitTest, hitlist);
+                    Traverse(*curNode.Right, hitTest, hitlist);
                 }
             }
         }
 
-        public List<Node> Traverse(NodeTest hitTest)
-        {
-            if (_rootNode == null)
-            {
-                throw new InvalidOperationException("rootnode null pointer");
-            }
 
-            var hits = new List<Node>();
-            _traverse(*_rootNode, hitTest, hits);
-            return hits;
-        }
-
-        public List<Node> TraverseNode(Func<Node, bool> hitTest)
-        {
-            if (_rootNode == null)
-            {
-                throw new InvalidOperationException("rootnode null pointer");
-            }
-
-            var hits = new List<Node>();
-            _traverse(*_rootNode, hitTest, hits);
-            return hits;
-        }
-
-        //// left in for compatibility..
-        //public List<ssBVHNode<GO>> traverseRay(SSRay ray)
-        //{
-        //    float tnear = 0f, tfar = 0f;
-
-        //    return traverse(box => OpenTKHelper.intersectRayAABox1(ray, box, ref tnear, ref tfar));
-        //}
-
-        //public List<ssBVHNode<GO>> traverse(SSRay ray)
-        //{
-        //    float tnear = 0f, tfar = 0f;
-
-        //    return traverse(box => OpenTKHelper.intersectRayAABox1(ray, box, ref tnear, ref tfar));
-        //}
-
-        public List<Node> traverse(BoundingBox volume)
-        {
-            return Traverse(box => box.IntersectsAABB(volume));
-        }
 
         /// <summary>
-        /// Call this to batch-optimize any object-changes notified through
-        /// ssBVHNode.refit_ObjectChanged(..). For example, in a game-loop,
-        /// call this once per frame.
+        /// Call this to batch-optimize any object-changes notified through <see cref="QueueForOptimize"/>     
         /// </summary>
         public void Optimize()
         {
@@ -384,14 +380,51 @@ namespace SimpleScene.Util.ssBVH
                 throw new Exception("In order to use optimize, you must set LEAF_OBJ_MAX=1");
             }
 
-            while (_refitNodes.Count > 0)
-            {
-                var maxdepth = _refitNodes.Max(n => n.Depth);
-                var sweepNodes = _refitNodes.Where(n => n.Depth == maxdepth).ToList();
+            if (_refitQueue.Length == 0)
+                return;
+    
+            // Traverse upwards looking at every node for a depth before moving to a higher depth,
+            // add each nodes' parents without creating duplicates when branches consolidate.
 
-                sweepNodes.ForEach(n => _refitNodes.Remove(n));
-                sweepNodes.ForEach(n => TryRotate(n.Ptr));
+            _refitQueue.SortDescending(_nodeDepthComparer);
+
+            int currentDepthPass = _refitQueue.First.Depth;
+
+            int i = 0;
+
+            while (currentDepthPass > 0)
+            {
+                for (; i < _refitQueue.Length; i++)
+                {
+                    Node* node = _refitQueue[i].Ptr;
+
+                    if (i == 0)
+                        currentDepthPass = node->Depth;
+
+                    if (node->Depth != currentDepthPass)
+                        break;
+
+                    if (!node->IsValid)
+                        continue;
+
+                    node->State &= ~Node.NodeState.OptimizationQueued;
+
+                    TryRotate(node);
+
+                    if (!node->HasParent)
+                        continue;
+
+                    var isParentQueued = (node->Parent->State & Node.NodeState.OptimizationQueued) != 0;
+                    if (isParentQueued)
+                        continue;
+
+                    node->Parent->State |= Node.NodeState.OptimizationQueued;
+
+                    _refitQueue.Add(*node->Parent);
+                }
+                currentDepthPass--;
             }
+            _refitQueue.Clear();
         }
 
         internal static float SurfaceArea(BoundingBox box)
@@ -470,8 +503,9 @@ namespace SimpleScene.Util.ssBVH
             return box;
         }
 
-        internal Node* CreateNodeFromSplit(Node* parent, SplitAxisOpt<T> splitInfo, SplitSide side, int curdepth, int bucketIndex = -1)
+        internal Node* CreateNodeFromSplit(Node* parent, SplitAxisOpt<T> splitInfo, NodeSide side, int curdepth, int bucketIndex = -1)
         {
+
             var newNode = CreateNode(bucketIndex);
             
             newNode->Parent = parent;
@@ -489,12 +523,12 @@ namespace SimpleScene.Util.ssBVH
                 throw new Exception("ssBVHNode constructed with invalid paramaters");
             }
 
-            var startIndex = side == SplitSide.Left ? splitInfo.LeftStartIndex : splitInfo.RightStartIndex;
-            var endIndex = side == SplitSide.Left ? splitInfo.LeftEndIndex : splitInfo.RightEndIndex;
+            var startIndex = side == NodeSide.Left ? splitInfo.LeftStartIndex : splitInfo.RightStartIndex;
+            var endIndex = side == NodeSide.Left ? splitInfo.LeftEndIndex : splitInfo.RightEndIndex;
             var itemCount = endIndex - startIndex + 1;
 
             ref var bucket = ref GetBucket(newNode->BucketIndex);
-            var overwrite = side == SplitSide.Left && itemCount <= bucket.Length;
+            var overwrite = side == NodeSide.Left && itemCount <= bucket.Length;
             if (overwrite)
             {
                 // Overwrite existing data and ignore excess by setting the length
@@ -540,6 +574,8 @@ namespace SimpleScene.Util.ssBVH
                 SplitNode(newNode);
                 ChildRefit(newNode, false);
             }
+
+            Debug.Assert(newNode->IsValid);
             return newNode;
         }
 
@@ -572,12 +608,21 @@ namespace SimpleScene.Util.ssBVH
             TryImproveAxisSplit(ref splitInfo, Axis.Y);
             TryImproveAxisSplit(ref splitInfo, Axis.Z);
 
-
             // Node is no longer a leaf; point left and right to the new child nodes.
             // Left node takes over the existing bucket, Right node creates a new bucket.
-            node->Left = CreateNodeFromSplit(node, splitInfo, SplitSide.Left, node->Depth + 1, node->BucketIndex);
-            node->Right = CreateNodeFromSplit(node, splitInfo, SplitSide.Right, node->Depth + 1);
+            node->Left = CreateNodeFromSplit(node, splitInfo, NodeSide.Left, node->Depth + 1, node->BucketIndex);
+            node->Right = CreateNodeFromSplit(node, splitInfo, NodeSide.Right, node->Depth + 1);
             node->BucketIndex = -1;
+
+            var isValidBranch = !node->IsLeaf && node->Left->IsLeaf && node->Left->Left == null && node->Left->Right == null && node->Right->IsLeaf && node->Right->Right == null && node->Right->Left == null;
+
+            Debug.Assert(node->IsValid);
+
+            Debug.Assert(isValidBranch);
+            if (!isValidBranch)
+            {
+                Debugger.Break();                
+            }
         }
 
         /// <summary>
@@ -605,64 +650,35 @@ namespace SimpleScene.Util.ssBVH
         /// </summary>
         /// <param name="bvh"></param>
         internal void TryRotate(Node* node)
-        {
-            // if we are not a grandparent, then we can't rotate, so queue our parent and bail out
-            //var isLeaf = node->IsLeaf;
-
-            if (node->IsLeaf || !node->Left->IsLeaf || !node->Right->IsLeaf)
+        {     
+            if (node->IsLeaf && node->Parent != null)
             {
-                if (node->Parent != null)
-                {
-                    //_refitNodes.Add(*node->Parent);
-                    TryRotate(node->Parent);
-                    return;
-                }
+                return;            
             }
 
             // for each rotation, check that there are grandchildren as necessary (aka not a leaf)
             // then compute total SAH cost of our branches after the rotation.
 
             var mySa = SurfaceArea(node->Left) + SurfaceArea(node->Right);
-
             var bestRot = new RotOpt(float.MaxValue, Rot.None);    
             
             //FindBestRotation(node, Rot.None, mySa, ref bestRot);
-            FindBestRotation(node, Rot.LRl, mySa, ref bestRot);
-            FindBestRotation(node, Rot.LRr, mySa, ref bestRot);
-            FindBestRotation(node, Rot.RLl, mySa, ref bestRot);
-            FindBestRotation(node, Rot.RLr, mySa, ref bestRot);
-            FindBestRotation(node, Rot.LlRl, mySa, ref bestRot);
-            FindBestRotation(node, Rot.LlRr, mySa, ref bestRot);
+            FindBestRotation(node, Rot.LeftRightLeft, mySa, ref bestRot);
+            FindBestRotation(node, Rot.LeftRightRight, mySa, ref bestRot);
+            FindBestRotation(node, Rot.RightLeftLeft, mySa, ref bestRot);
+            FindBestRotation(node, Rot.RightLeftRight, mySa, ref bestRot);
+            FindBestRotation(node, Rot.LeftLeftRightLeft, mySa, ref bestRot);
+            FindBestRotation(node, Rot.LeftLeftRightRight, mySa, ref bestRot);
+
 
             // perform the best rotation...            
-            if (bestRot.Rot == Rot.None)
+            if (bestRot.Rot != Rot.None)
             {
-                Debug.Log($"BVH bestrot {bestRot.Rot} from {mySa} to {bestRot.Sah}");
-
-                // if the best rotation is no-rotation... we check our parents anyhow..                
-                if (node->Parent != null)
-                {
-                    //if (DateTime.Now.Ticks % 100 < 2)
-                    //{
-                        TryRotate(node->Parent);
-                        //_refitNodes.Add(*node->Parent);
-                    //}
-                }
-            }
-            else
-            {
-                if (node->Parent != null)
-                {
-                    TryRotate(node->Parent);
-                    //_refitNodes.Add(*node->Parent);
-                    //_refitNodes.Add(*node->Parent);
-                }
-
                 var diff = (mySa - bestRot.Sah) / mySa;
                 if (diff <= 0)
                 {
-                    Debug.Log($"BVH no benefit ({diff})  {bestRot.Rot} from {mySa} to {bestRot.Sah}");
-                    return; // the benefit is not worth the cost
+                    //Debug.Log($"BVH no benefit ({diff})  {bestRot.Rot} from {mySa} to {bestRot.Sah}");
+                    return;
                 }
 
                 Debug.LogFormat("BVH swap {0} from {1} to {2}", bestRot.Rot.ToString(), mySa, bestRot.Sah);
@@ -678,7 +694,7 @@ namespace SimpleScene.Util.ssBVH
                 {
                     case Rot.None: break;
                     // child to grandchild rotations
-                    case Rot.LRl:
+                    case Rot.LeftRightLeft:
                         swap = node->Left;
                         node->Left = node->Right->Left;
                         node->Left->Parent = node;
@@ -687,7 +703,7 @@ namespace SimpleScene.Util.ssBVH
                         ChildRefit(node->Right, false);
                         break;
 
-                    case Rot.LRr:
+                    case Rot.LeftRightRight:
                         swap = node->Left;
                         node->Left = node->Right->Right;
                         node->Left->Parent = node;
@@ -696,7 +712,7 @@ namespace SimpleScene.Util.ssBVH
                         ChildRefit(node->Right, false);
                         break;
 
-                    case Rot.RLl:
+                    case Rot.RightLeftLeft:
                         swap = node->Right;
                         node->Right = node->Left->Left;
                         node->Right->Parent = node;
@@ -705,7 +721,7 @@ namespace SimpleScene.Util.ssBVH
                         ChildRefit(node->Left, false);
                         break;
 
-                    case Rot.RLr:
+                    case Rot.RightLeftRight:
                         swap = node->Right;
                         node->Right = node->Left->Right;
                         node->Right->Parent = node;
@@ -715,7 +731,7 @@ namespace SimpleScene.Util.ssBVH
                         break;
 
                     // grandchild to grandchild rotations
-                    case Rot.LlRr:
+                    case Rot.LeftLeftRightRight:
                         swap = node->Left->Left;
                         node->Left->Left = node->Right->Right;
                         node->Right->Right = swap;
@@ -725,7 +741,7 @@ namespace SimpleScene.Util.ssBVH
                         ChildRefit(node->Right, false);
                         break;
 
-                    case Rot.LlRl:
+                    case Rot.LeftLeftRightLeft:
                         swap = node->Left->Left;
                         node->Left->Left = node->Right->Left;
                         node->Right->Left = swap;
@@ -739,121 +755,83 @@ namespace SimpleScene.Util.ssBVH
                     default: throw new NotImplementedException("missing implementation for BVH Rotation .. " + bestRot.Rot);
                 }
 
-                // fix the depths if necessary....
                 switch (bestRot.Rot)
                 {
-                    case Rot.LRl:
-                    case Rot.LRr:
-                    case Rot.RLl:
-                    case Rot.RLr:
+                    case Rot.LeftRightLeft:
+                    case Rot.LeftRightRight:
+                    case Rot.RightLeftLeft:
+                    case Rot.RightLeftRight:
                         SetDepth(node, node->Depth);
                         break;
                 }
             }
+     
         }
 
         private static void FindBestRotation(Node* node, Rot r, float mySa, ref RotOpt bestRot)
         {
-            var rot = RotOpt2(node, r, mySa);
+            var rot = GetRotationSurfaceArea(node, r, mySa);
             if (rot.Sah < bestRot.Sah)
             {
                 bestRot = rot;
             }
         }
 
-        private static RotOpt RotOpt2(Node* node, Rot rot, float mySa)
+        private static RotOpt GetRotationSurfaceArea(Node* node, Rot rot, float mySa)
         {
             switch (rot)
             {
                 case Rot.None: return new RotOpt(mySa, Rot.None);
 
                 // child to grandchild rotations
-                case Rot.LRl:
+                case Rot.LeftRightLeft:
                     return node->Right->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
                         : new RotOpt(SurfaceArea(node->Right->Left) + SurfaceArea(AabBofPair(node->Left, node->Right->Right)), rot);
 
-                case Rot.LRr:
+                case Rot.LeftRightRight:
                     return node->Right->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
                         : new RotOpt(SurfaceArea(node->Right->Right) + SurfaceArea(AabBofPair(node->Left, node->Right->Left)), rot);
 
-                case Rot.RLl:
+                case Rot.RightLeftLeft:
                     return node->Left->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
                         : new RotOpt(SurfaceArea(AabBofPair(node->Right, node->Left->Right)) + SurfaceArea(node->Left->Left), rot);
 
-                case Rot.RLr:
+                case Rot.RightLeftRight:
                     return node->Left->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
                         : new RotOpt(SurfaceArea(AabBofPair(node->Right, node->Left->Left)) + SurfaceArea(node->Left->Right), rot);
 
                 // grandchild to grandchild rotations
-                case Rot.LlRr:
+                case Rot.LeftLeftRightRight:
                     return node->Left->IsLeaf || node->Right->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
                         : new RotOpt(SurfaceArea(AabBofPair(node->Right->Right, node->Left->Right)) + SurfaceArea(AabBofPair(node->Right->Left, node->Left->Left)), rot);
 
-                case Rot.LlRl:
+                case Rot.LeftLeftRightLeft:
                     return node->Left->IsLeaf || node->Right->IsLeaf 
                         ? new RotOpt(float.MaxValue, Rot.None) 
                         : new RotOpt(SurfaceArea(AabBofPair(node->Right->Left, node->Left->Right)) + SurfaceArea(AabBofPair(node->Left->Left, node->Right->Right)), rot);
-               
+
                 default:
                     throw new NotImplementedException("Missing implementation for BVH Rotation SAH Computation .. " + rot);
             }
         }
 
-        //public void CheckForChanges()
-        //{
-        //    TraverseForChanges(rootBVH);
-        //}
-
-        //private void TraverseForChanges(Node curNode)
-        //{
-        //    // object driven update alternative is to have an event T, which is registered in IBVHNodeAdapter.mapObjectToBVHLeaf(), 
-        //    // and when triggered should checkForChanges/ add itself to Refit_ObjectChanged().
-
-        //    if (curNode == null)
-        //        return;
-
-        //    //if(curNode.Items?.Count > 0)
-        //    //{
-        //    //    for (int i = 0; i < curNode.Items.Count; i++)
-        //    //    {
-        //    //        var item = curNode.Items[0];
-        //    //        nAda.checkForChanges(ref item);
-        //    //    }
-        //    //}
-
-
-        //    //ref var bucket = ref FindBucket(curNode);
-        //    //foreach(var item in bucket)
-        //    //{
-        //    //    nAda.checkForChanges(item);
-        //    //}
-
-        //    //if (curNode.Items?.Count > 0)
-        //    //{
-        //    //    for (int i = 0; i < curNode.Items.Count; i++)
-        //    //    {
-        //    //        var item = curNode.Items[0];
-        //    //        nAda.checkForChanges(ref item);
-        //    //    }
-        //    //}
-
-        //    TraverseForChanges(curNode.left);
-        //    TraverseForChanges(curNode.right);            
-        //}
-
-
         public void Add(T newOb)
         {
-            if (_buckets.Length+1 >= MaxItemsPerBucket)
+            if (Buckets.Length+1 >= MaxItemsPerBucket)
             {
                 throw new InvalidOperationException("The maximum number of buckets has been reached");
             }
 
+            AddItemToNode(newOb);
+        }
+
+        private void AddItemToNode(T newOb)
+        {
             var box = BoundingBox.FromSphere(newOb.Position, newOb.Radius);
             var boxSah = SurfaceArea(ref box);
             AddObjectToNode(_rootNode, newOb, ref box, boxSah);
@@ -863,16 +841,115 @@ namespace SimpleScene.Util.ssBVH
         {
             if (!TryGetLeaf(newObj, out Node leaf))
             {
-                throw new ArgumentException(nameof(newObj), "Object wasn't found in BVH");
-
+                throw new ArgumentException($"{nameof(newObj)} wasn't found in BVH");
             }
-            RemoveObjectFromNode(leaf.Ptr, newObj);
+            RemoveItemFromNode(leaf.Ptr, newObj);
         }
 
         internal void Add(Node node, T newOb, ref BoundingBox newObBox, float newObSAH)
         {
             AddObjectToNode(node.Ptr, newOb, ref newObBox, newObSAH);
         }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="currentNode"></param>
+        /// <param name="item"></param>
+        /// <param name="node"></param>
+        /// <returns></returns>
+        public bool TryFindBetterNode(Node* currentNode, T item, out Node* node)
+        {
+            // This is a step in addressing one of the issues with the tree, corruption because of moving objects.
+            // Things are well formed on creation but if any of the nodes move significantly then they should be grouped with the nodes they're now close to.
+            // Flipping as with Optimize() is efficient but not particularly effective on large trees because it doesn't swap nodes from deep in one branch to deep within another branch.
+
+            var box = BoundingBox.FromSphere(item.Position, item.Radius);
+            var sah = SurfaceArea(ref box);
+
+            node = _rootNode;
+
+            while (node->BucketIndex == -1)
+            {
+                if (!node->IsValid || node->Left != null && !node->Left->IsValid || node->Right != null && !node->Right->IsValid)
+                {
+                    Debug.Log("Invalid Node");
+                    Debugger.Break();
+                }
+
+                var left = node->Left;
+                var right = node->Right;
+                var sendLeftSAH = SurfaceArea(right) + SurfaceArea(left->Box.ExpandedBy(box)); // (L+N,R)
+                var sendRightSAH = SurfaceArea(left) + SurfaceArea(right->Box.ExpandedBy(box)); // (L,R+N)
+                var mergedLeftAndRightSAH = SurfaceArea(AabBofPair(left, right)) + sah; // (L+R,N)
+
+                // Doing a merge-and-pushdown can be expensive, so we only do it if it's notably better
+                const float MERGE_DISCOUNT = 0.3f;
+
+                if (mergedLeftAndRightSAH < Math.Min(sendLeftSAH, sendRightSAH) * MERGE_DISCOUNT)
+                {
+                    break;
+                }
+
+                node = sendLeftSAH < sendRightSAH ? left : right;
+            }
+
+            if (_rootNode == node || node == currentNode)
+                return false;
+
+            if (currentNode->Parent == node && currentNode->IsLeaf)
+            {
+                // This scenario doesn't work because the source is a leaf and the parent already has two nodes,
+                // so moving it up would create a dangling leaf in the vacated spot.
+                // todo: might need to allow this where max leaf count > 1 and parent items bucket is not at max capacity.
+                /*            
+                      x           x          
+                     / \         / \            
+                    ?   d       ?   s          
+                       / \	       / 	     
+                      ?   s       ?         
+                */
+                return false;
+            }
+
+            //if (node->IsLeaf)
+            //{ 
+            //    DebugDrawer.DrawWireCube(node->Box.Center(), node->Box.Size(), Color.blue);
+            //}
+            //else
+            //{
+            //    DebugDrawer.DrawWireCube(node->Box.Center(), node->Box.Size(), Color.yellow);
+            //}
+
+            return true;
+        }
+
+        public void MoveItemBetweenNodes(Node* source, Node* destination, T item)
+        {
+            RemoveItemFromNode(source, item);
+            AddItemToNode(destination, item);
+        }
+
+        private void AddItemToNode(Node* destination, T item)
+        {
+            if (destination->IsLeaf)
+            {
+                AddItemToLeaf(destination, item);
+            }
+            else
+            {
+                AddItemToBranch(destination, item);
+            }
+        }
+
+        private void AddItemToLeaf(Node* destination, T item)
+        {
+            GetBucket(destination).Add(item);
+            MapLeaf(item, *destination);
+            RefitVolume(destination);
+            SplitIfNecessary(destination);
+
+        }  
 
         internal void AddObjectToNode(Node* node, T newOb, ref BoundingBox newObBox, float newObSAH)
         {
@@ -899,7 +976,7 @@ namespace SimpleScene.Util.ssBVH
 
                 if (mergedLeftAndRightSAH < Math.Min(sendLeftSAH, sendRightSAH) * MERGE_DISCOUNT)
                 {
-                    AddObject_Pushdown(node, newOb);
+                    AddItemToBranch(node, newOb);
                     return;
                 }
 
@@ -917,18 +994,15 @@ namespace SimpleScene.Util.ssBVH
             //curNode.Items.Add(newOb);
 
             GetBucket(node).Add(newOb);
-
             MapLeaf(newOb, *node);
-
             RefitVolume(node);
-
             SplitIfNecessary(node);
-            //node->SplitIfNecessary(Adapter);
         }
 
         internal bool RefitVolume(Node* node)
         {
             var oldbox = node->Box;
+
             ComputeVolume(node);
 
             if (!node->Box.Equals(oldbox))
@@ -937,28 +1011,29 @@ namespace SimpleScene.Util.ssBVH
                 {
                     ChildRefit(node->Parent);
                 }
-
                 return true;
             }
-
             return false;
         }
 
-        internal void RemoveObjectFromNode(Node* node, T newOb)
+        internal void RemoveItemFromNode(Node* node, T newOb)
         {
+            
+
             if (!node->IsLeaf)
             {
                 throw new Exception("removeObject() called on nonLeaf!");
             }
+            if (!node->HasParent)
+            {
+                throw new Exception("Attempt to collapse a node to a parent when it has no parent");
+            }
 
             UnmapLeaf(newOb);
 
-            //ref var bucket = ref node.Bucket(Adapter);
             ref var bucket = ref GetBucket(node->BucketIndex);
             var idx = bucket.IndexOf(newOb);
             bucket.RemoveAt(idx);
-
-            //Items.Remove(newOb);
 
             if (!IsEmpty(node))
             {
@@ -968,33 +1043,23 @@ namespace SimpleScene.Util.ssBVH
             {
                 // our leaf is empty, so collapse it if we are not the root...
                 if (node->HasParent)
+                {         
+                    // Note this is destructive to both the node and node-parent, so any following logic can't use either.
+                    RemoveNode(node);
+                        
+                    // todo remove node from _nodes collection??        
+                }
+                else
                 {
-                    FreeBucket(node);
-
-                    //Items = null;
-                    RemoveLeaf(node->Parent, node);
-
-                    // todo remove node from _nodes collection??
-
-                    node->Parent = null;
+                    Debug.Log("Attempt to collapse node with no parent");
                 }
             }
+
         }
 
-        public void Refit_ObjectChanged(Node node, ref T obj)
+        public Node* GetSibling(Node* node)
         {
-            if (!node.IsLeaf)
-            {
-                throw new Exception("dangling leaf!");
-            }
-
-            if (RefitVolume(node.Ptr))
-            {
-                if (node.Parent != null)
-                {
-                    _refitNodes.Add(*node.Parent);
-                }
-            }
+            return node->Parent->Left == node ? node->Parent->Right : node->Parent->Left;
         }
 
         public bool IsEmpty(Node* node)
@@ -1007,14 +1072,16 @@ namespace SimpleScene.Util.ssBVH
             return node->BucketIndex >= 0 ? GetBucket(node).Length : 0;
         }
 
-        internal void RemoveLeaf(Node* parent, Node* nodeToRemove)
+        internal Node* RemoveNode(Node* nodeToRemove)
         {
-            // Collapse remove a child from its parent
+            // Remove a child from its parent
+
+            var parent = nodeToRemove->Parent;
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (parent->Left == null || parent->Right == null)
             {
-                throw new ArgumentException("Bad node encountered: an intermediary (non-leaf) node must have child nodes.");
+                throw new ArgumentException("Invalid Node: A branch node must have two child nodes.");
             }
 
             if (nodeToRemove->Parent != parent || (parent->Right != nodeToRemove && parent->Left != nodeToRemove))
@@ -1022,25 +1089,44 @@ namespace SimpleScene.Util.ssBVH
                 throw new ArgumentException("Attempt to remove a leaf with an incorrect parent-child relationship.");
             }
 #endif
-
-            var nodeToKeep = nodeToRemove == parent->Left ? parent->Right : parent->Left;
+            var nodeToKeep = GetSibling(nodeToRemove); //nodeToRemove == parent->Left ? parent->Right : parent->Left;
 
             // The parent and the node to remove will both disappear, by moving the nodeToKeep into the place of its parent.
-            
-            nodeToKeep->Parent = parent->Parent;
 
-            if (parent->Parent->Left == parent)
+
+            Debug.Log($"Removing Node {nodeToRemove->NodeNumber} (Leaf:{nodeToRemove->IsLeaf} Valid:{nodeToRemove->IsValid}) replacing its parent: {parent->NodeNumber} (Leaf:{parent->IsLeaf}, Valid:{parent->IsValid} Grandparent={(parent->Parent != null ? parent->Parent->NodeNumber.ToString() : "Null")}) with it's other child: {nodeToKeep->NodeNumber} (Leaf:{nodeToKeep->IsLeaf}, Valid:{nodeToKeep->IsValid})");
+
+
+            var grandparent = parent->Parent;
+            if (grandparent == null)
             {
-                parent->Parent->Left = nodeToKeep;
-            }
-            else if (parent->Parent->Right == parent)
-            {
-                parent->Parent->Right = nodeToKeep;
+                if (!nodeToKeep->IsLeaf)
+                {
+                    _rootNode = nodeToKeep;
+                }
             }
             else
             {
-                throw new ArgumentException("Attempt to remove a leaf with a parent that has an incorrect parent-child relationship.");
+                nodeToKeep->Parent = parent->Parent;
+
+                if (parent->Parent->Left == parent)
+                {
+                    parent->Parent->Left = nodeToKeep;
+                }
+                else if (parent->Parent->Right == parent)
+                {
+                    parent->Parent->Right = nodeToKeep;
+                }
+                else
+                {
+                    throw new ArgumentException("Attempt to remove a leaf with a parent that has an incorrect parent-child relationship.");
+                }
             }
+
+
+            FreeBucket(nodeToRemove);
+            FreeNode(nodeToRemove);
+            FreeNode(parent);
 
             // todo: currently nodes are still there after being orphaned, since they self-reference their pointer
             // ill need to update any other nodes that were moved as part of the remove operation (ie from swap back)
@@ -1054,66 +1140,38 @@ namespace SimpleScene.Util.ssBVH
                 SetDepth(nodeToKeep, nodeToKeep->Depth - 1);
             }
 
-            //UnmapLeaf();
-            //Debug.Assert(!_map.TryGetValue(*parent, out Node result));
-
-            //parent = nodeToKeep;
-
-            //// "become" the leaf we are keeping.
-            //parent->Box = nodeToKeep->Box;
-            //parent->Left = nodeToKeep->Left;
-            //parent->Right = nodeToKeep->Right;
-
-            ////Items = keepLeaf.Items;
-
-            //var oldBucketIndex = parent->BucketIndex;
-            //var newBucketIndex = nodeToKeep->BucketIndex;
-            //parent->BucketIndex = newBucketIndex;
-
-            ////ref var keepItems = ref node->Bucket(Adapter);
-
-            //if (newBucketIndex != -1)
-            //{
-            //    parent->Left->Parent = parent->Ptr;
-
-            //    // reassign child parents..
-            //    parent->Right->Parent = parent->Ptr;
-
-            //    // this reassigns depth for our children
-            //    SetDepth(parent, parent->Depth);
-            //}
-            //else if (newBucketIndex != oldBucketIndex)
-            //{
-            //    ref var keepItems = ref GetBucket(parent->BucketIndex);
-            //    foreach (ref var item in keepItems)
-            //    {
-            //        MapLeaf(item, *parent);
-            //    }
-            //}
-
-            // propagate our new volume..
             if (nodeToKeep->Parent != null)
             {
                 ChildRefit(nodeToKeep->Parent);
             }
+            return nodeToKeep->Parent;
         }
 
-        internal void AddObject_Pushdown(Node* curNode, T newOb)
+        internal void AddItemToBranch(Node* destination, T newObj)
         {
-           
-            var left = curNode->Left;
-            var right = curNode->Right;
+            /*            
+            Item inserted into a branch node: 
+            * The current children (l & r) become children of a new node (m).
+            * This frees up a side to attach 'newObj' to a new node (+)
+		            
+		            Parent    P          
+		            |         |           
+		            Dest      D          
+	               / \	     / \	     
+                  l   r     +   m       
+	                           / \       
+			                  l   r                
+            */
+
+            var left = destination->Left;
+            var right = destination->Right;
 
             // merge and pushdown left and right as a new node..
             var mergedSubnode = CreateNode();
-            mergedSubnode->Left = curNode->Left;
-            mergedSubnode->Right = curNode->Right;
-            mergedSubnode->Parent = curNode;
-            //mergedSubnode.Items = null; // we need to be an interior node... so null out our object list..
-
-            //var oldBucket = mergedSubnode->BucketIndex;
+            mergedSubnode->Left = destination->Left;
+            mergedSubnode->Right = destination->Right;
+            mergedSubnode->Parent = destination;
             FreeBucket(mergedSubnode);
-            //mergedSubnode->BucketIndex = -1;
 
             left->Parent = mergedSubnode;
             right->Parent = mergedSubnode;
@@ -1121,34 +1179,19 @@ namespace SimpleScene.Util.ssBVH
 
             // make new subnode for obj
             var newSubnode = CreateNode();
-            newSubnode->Parent = curNode;
-
-            //if (mergedSubnode->BucketIndex > 0)
-            //{
-            //    newSubnode->BucketIndex = mergedSubnode->BucketIndex;
-            //    mergedSubnode->BucketIndex = -1;
-            //}
-            //else
-            //{
-                //var bucketIndex = GetOrCreateFreeBucket();
-                //newSubnode->BucketIndex = bucketIndex;
-            //    mergedSubnode->BucketIndex = -1;
-            //}
+            newSubnode->Parent = destination;
 
             ref var bucket = ref GetBucket(newSubnode->BucketIndex);
-            bucket.Add(newOb);
+            bucket.Add(newObj);
 
-            //newSubnode.Items = new List<T> { newOb };
-            MapLeaf(newOb, *newSubnode);
-
-            //newSubnode->ComputeVolume(adapter);
+            MapLeaf(newObj, *newSubnode);
             ComputeVolume(newSubnode);
 
-            // make assignments..
-            curNode->Left = mergedSubnode;
-            curNode->Right = newSubnode;
-            SetDepth(curNode, curNode->Depth); // propagate new depths to our children.
-            ChildRefit(curNode);
+            destination->Left = mergedSubnode;
+            destination->Right = newSubnode;
+
+            SetDepth(destination, destination->Depth); 
+            ChildRefit(destination);
         }
 
         public int CountNodes()
@@ -1162,12 +1205,12 @@ namespace SimpleScene.Util.ssBVH
             {
                 return 1;
             }
-
             return CountNodes(node->Left) + CountNodes(node->Right);
         }
 
         public void SetDepth(Node* node, int newDepth)
         {
+           
             node->Depth = newDepth;
             if (newDepth > _maxDepth)
             {
@@ -1176,8 +1219,45 @@ namespace SimpleScene.Util.ssBVH
 
             if (!node->IsLeaf)
             {
+                if (!node->IsValidBranch)
+                {
+                    Debug.Log($"Bad Branch: Node {node->NodeNumber} (Parent={(node->Parent != null ? node->Parent->NodeNumber.ToString() : "Null")})> ({node->Left->NodeNumber} {(node->Left->IsValid?"Invalid":"Valid")}, {node->Right->NodeNumber} {(node->Right->IsValid ? "Invalid" : "Valid")})");
+
+                    if (!node->IsValid)
+                        PrintDebugInvalidReason(node);
+                    if (!node->Right->IsValid)
+                        PrintDebugInvalidReason(node->Right);
+                    if (!node->Left->IsValid)
+                        PrintDebugInvalidReason(node->Left);
+                }
                 SetDepth(node->Left, newDepth + 1);
                 SetDepth(node->Right, newDepth + 1);
+            }
+        }
+
+        public void PrintDebugInvalidReason(Node* node)
+        {
+            if(node->BucketIndex == -1)
+            {
+                if (node->Left == null)
+                    Debug.LogError($"Node {node->NodeNumber} left is null pointer");
+                else if (node->Left == null)
+                    Debug.LogError($"Node {node->NodeNumber} right is null pointer");
+            }
+            else
+            {
+                if (node->Left != null)
+                    Debug.LogError($"Node {node->NodeNumber} is leaf but has left child pointer");
+                if (node->Left != null)
+                    Debug.LogError($"Node {node->NodeNumber} is leaf but has left child pointer");
+            }
+            if (node != _rootNode && node->Parent == null)
+            {
+                Debug.LogError($"Node {node->NodeNumber} has no parent");
+            }
+            if (node->Parent->Left != node && node->Parent->Right != node)
+            {
+                Debug.LogError($"Node {node->NodeNumber}'s parent doesn't point to it as a left or right child");
             }
         }
 
@@ -1224,16 +1304,6 @@ namespace SimpleScene.Util.ssBVH
             aabb.Max.z = node->Box.Max.z;
             return aabb;
         }
-
-        //internal void ChildExpanded<T>(IBoundingHierarchyAdapter<T> nAda, Node child) where T : struct, IBoundingHierarchyNode, IEquatable<T>
-        //{
-        //    nAda.BVH.ChildExpanded(this, child);
-        //}
-
-        //internal void ChildRefit<T>(IBoundingHierarchyAdapter<T> nAda, bool propagate = true) where T : struct, IBoundingHierarchyNode, IEquatable<T>
-        //{
-        //    nAda.BVH.ChildRefit(Ptr, propagate);
-        //}
 
         internal void ChildRefit(Node* curNode, bool propagate = true)
         {
@@ -1282,9 +1352,14 @@ namespace SimpleScene.Util.ssBVH
 
                 // and walk up the tree
                 curNode = curNode->Parent;
+
             } while (propagate && curNode != null);
         }
 
+        /// <summary>
+        /// Splits a node that contains too many items (more than beyond <see cref="MaxItemsPerBucket"/>);
+        /// </summary>
+        /// <param name="node">a node to be split</param>
         internal void SplitIfNecessary(Node* node)
         {
             // When items are added, they're all put into the best matching node's item bucket.
@@ -1294,6 +1369,7 @@ namespace SimpleScene.Util.ssBVH
             {
                 SplitNode(node);
             }
+            Debug.Assert(node->IsValid);
         }
 
         internal void ComputeVolume(Node* node)
@@ -1430,58 +1506,12 @@ namespace SimpleScene.Util.ssBVH
                 throw new InvalidOperationException(nameof(NodePositionAxisComparer<T>) + " - Unsupported Axis: " + axis);
             }
         }
+
+        public struct NodeDepthComparer : IComparer<Node>
+        {
+            public int Compare(Node a, Node b) => StructComparer<int>.Default.Compare(a.Depth, b.Depth);
+        }
     }
-
-    //public interface IBoundingHierarchyAdapter<T> where T : struct, IBoundingHierarchyNode, IEquatable<T>
-    //{
-    //   // NativeBoundingHierarchy<T> BVH { get; }
-
-    //    //void SetBvH(NativeBoundingHierarchy<T> bvh);
-
-    //    float3 Position(T obj);
-
-    //    float Radius(T obj);
-
-    //    //void MapLeaf(T obj, Node leaf);
-
-    //    //void Unmap(T obj);
-
-    //    void CheckForChanges(T obj);
-
-    //    //Node GetLeaf(T obj);
-    //}
-
-    public interface IReadIndexed<out T>
-    {
-        T this[int index] { get; }
-
-        int Length { get; }
-    }
-
-    //public struct IndexedRotations : IReadIndexed<Rot>
-    //{
-    //    public const int ItemCount = 7;
-
-    //    private unsafe fixed int _values[ItemCount];
-
-    //    unsafe IndexedRotations()
-    //    {
-    //        for (int i = 0; i < ItemCount; i++)
-    //        {        
-    //            _values[i] = i;               
-    //        }
-    //    }
-
-    //    public unsafe Rot this[int index]
-    //    {
-    //        get
-    //        {
-    //            return (Rot)_values[index];
-    //        }
-    //    }
-
-    //    public int Length => ItemCount;
-    //}
 
     public enum Axis
     {
@@ -1494,15 +1524,15 @@ namespace SimpleScene.Util.ssBVH
     public enum Rot
     {
         None = 0,
-        LRl,
-        LRr,
-        RLl,
-        RLr,
-        LlRr,
-        LlRl
+        LeftRightLeft,
+        LeftRightRight,
+        RightLeftLeft,
+        RightLeftRight,
+        LeftLeftRightRight,
+        LeftLeftRightLeft,
     }
 
-    public enum SplitSide
+    public enum NodeSide
     {
         None = 0,
         Left,

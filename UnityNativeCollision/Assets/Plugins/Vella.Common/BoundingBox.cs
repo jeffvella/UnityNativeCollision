@@ -1,12 +1,9 @@
-﻿// Copyright(C) David W. Jeske, 2013
-// Released to the public domain. 
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Unity.Mathematics;
 
-namespace SimpleScene
+namespace Vella.Common
 {
     [DebuggerDisplay("AABB: {Min},{Max}")]
     public struct BoundingBox : IEquatable<BoundingBox>
@@ -34,21 +31,12 @@ namespace SimpleScene
 
         public bool IntersectsSphere(float3 origin, float radius)
         {
-            if (
-                (origin.x + radius < Min.x) ||
-                (origin.y + radius < Min.y) ||
-                (origin.z + radius < Min.z) ||
-                (origin.x - radius > Max.x) ||
-                (origin.y - radius > Max.y) ||
-                (origin.z - radius > Max.z)
-               )
-            {
-                return false;
-            }
-            else
-            {
-                return true;
-            }
+            return (!(origin.x + radius < Min.x)) && 
+                   (!(origin.y + radius < Min.y)) && 
+                   (!(origin.z + radius < Min.z)) && 
+                   (!(origin.x - radius > Max.x)) && 
+                   (!(origin.y - radius > Max.y)) && 
+                   (!(origin.z - radius > Max.z));
         }
 
         public bool IntersectsSphere(BoundingSphere sphere)
@@ -89,14 +77,14 @@ namespace SimpleScene
             return (Min + Max) / 2f;
         }
 
-        public float3 Diff()
+        public float3 Size()
         {
             return Max - Min;
         }
 
         public BoundingSphere ToSphere()
         {
-            float r = math.length(Diff() + 0.001f) / 2f;
+            float r = math.length(Size() + 0.001f) / 2f;
             return new BoundingSphere(Center(), r);
         }
 
@@ -106,7 +94,7 @@ namespace SimpleScene
             UpdateMax(b);
         }
 
-        internal void ExpandToFit(BoundingBox b)
+        public void ExpandToFit(BoundingBox b)
         {
             if (b.Min.x < Min.x) { Min.x = b.Min.x; }
             if (b.Min.y < Min.y) { Min.y = b.Min.y; }
@@ -123,11 +111,9 @@ namespace SimpleScene
             if (b.Min.x < newbox.Min.x) { newbox.Min.x = b.Min.x; }
             if (b.Min.y < newbox.Min.y) { newbox.Min.y = b.Min.y; }
             if (b.Min.z < newbox.Min.z) { newbox.Min.z = b.Min.z; }
-
             if (b.Max.x > newbox.Max.x) { newbox.Max.x = b.Max.x; }
             if (b.Max.y > newbox.Max.y) { newbox.Max.y = b.Max.y; }
             if (b.Max.z > newbox.Max.z) { newbox.Max.z = b.Max.z; }
-
             return newbox;
         }
 

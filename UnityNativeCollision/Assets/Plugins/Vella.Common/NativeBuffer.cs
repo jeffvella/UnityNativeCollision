@@ -6,34 +6,17 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Remoting.Messaging;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Internal;
 
 
 namespace Vella.Common
 {
-
-    public struct NativeBufferRange<T> where T : struct
-    {
-        public NativeBuffer<T> Buffer;
-        public int StartIndex;
-        public int EndIndex;
-
-        public NativeBufferRange(NativeBuffer<T> buffer, int start, int end)
-        {
-            StartIndex = start;
-            EndIndex = end;
-            Buffer = buffer;    
-        }
-
-        public int Length => EndIndex - StartIndex;
-
-        public ref T this[int i] => ref Buffer[i];
-    }
-
     /// <summary>
     /// NativeBuffer<T> is an alternative to NativeArray<T>. 
     /// (NativeList<T> currently has issues being instantiated within a burst job)
@@ -116,19 +99,45 @@ namespace Vella.Common
             return _buffer.GetItem<T>(_maxIndex--);
         }
 
-        public int IndexOf(T item)
+        public ref T Last => ref this[_maxIndex];
+        public ref T First => ref this[0];
+
+        //public int IndexOf(T item)
+        //{
+        //    for (int i = 0; i < Length; i++)
+        //    {
+        //        if (this[i].Equals(item)) // boxing
+        //        {
+        //            return i;
+        //        }
+        //    }
+        //    return -1;
+        //}
+
+        public int IndexOf<T1>(T1 item, int offset = 0) where T1 : struct, IEquatable<T1>
         {
             for (int i = 0; i < Length; i++)
-            {
-                if (this[i].Equals(item))
+            {              
+                //if (item.Equals()) // boxing instead of calling Equals(T obj) - fails on burst.             
+                if (item.Equals(_buffer.AsRef<T1>(i, offset)))
                     return i;
             }
             return -1;
         }
 
-        public bool Contains(T bucketIndex)
+        //public int IndexOf<T1>(T1 item) where T1 : struct, IComparable<T>
+        //{
+        //    for (int i = 0; i != Length; i++)
+        //    {
+        //        if (item.CompareTo(this[i]) == 0)
+        //            return i;
+        //    }
+        //    return -1;
+        //}
+
+        public bool Contains<T1>(T1 item) where T1 : struct, IEquatable<T1>
         {
-            return IndexOf(bucketIndex) != -1;
+            return IndexOf(item) != -1;
         }
 
         public void Reverse()   
@@ -143,9 +152,14 @@ namespace Vella.Common
             }
         }
 
-        public unsafe U* GetItemPtr<U>(int index) where U : unmanaged
+        public unsafe TU* GetItemPtr<TU>(int index) where TU : unmanaged
         {
-            return _buffer.AsPtr<U>(index);
+            return _buffer.AsPtr<TU>(index);
+        }
+
+        public ref T1 AsRef<T1>(int index, int offset = 0) where T1 : struct
+        {
+            return ref _buffer.AsRef<T1>(index, offset);
         }
 
         public int Capacity => _buffer.Length;
@@ -158,7 +172,7 @@ namespace Vella.Common
 
         public void Clear()
         {
-            NativeBuffer.Clear<T>(_buffer);
+            _buffer.Clear();
             _maxIndex = -1;
         }
 
@@ -179,17 +193,17 @@ namespace Vella.Common
 
 
 
-        public void Sort(IComparer<T> comparer = null)
-        {         
-            Sort(comparer ?? StructComparer<T>.Default, 0, _maxIndex, ListSortDirection.Ascending);
-        }
-
-        public void SortDescending(IComparer<T> comparer = null)
+        public void Sort(IComparer<T> comparer)
         {
-            Sort(comparer ?? StructComparer<T>.Default, 0, _maxIndex, ListSortDirection.Descending);
+            Sort(comparer, 0, _maxIndex, ListSortDirection.Ascending);
         }
 
-        private void Sort(IComparer<T> comparer, int min, int max, ListSortDirection direction)
+        public void SortDescending(IComparer<T> comparer)
+        {
+            Sort(comparer, 0, _maxIndex, ListSortDirection.Descending);
+        }
+
+        private void Sort<TComparer>(TComparer comparer, int min, int max, ListSortDirection direction) where TComparer : IComparer<T>
         {
             int i = min, j = max;
             var pivot = this[(min + max) / 2];
@@ -287,23 +301,209 @@ namespace Vella.Common
 
         public unsafe void Remove<TU>(TU* elementPtr) where TU : unmanaged
         {
+            var index = IndexOf(elementPtr);
+            RemoveAtSwapBack(index);
+        }
+
+        /// <summary>
+        /// Calculate an element index based on its memory address
+        /// </summary>
+        public unsafe int IndexOf(void* elementPtr)
+        {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (elementPtr == null)
                 throw new ArgumentNullException();
 #endif
-            var ptr = (ulong)elementPtr;
-            var bufferPtr = (ulong)_buffer.GetUnsafeBufferPointerWithoutChecks();
-            var offset = ptr - bufferPtr;
+            ulong ptr = (ulong)elementPtr;
+            ulong bufferPtr = (ulong)_buffer.GetUnsafeBufferPointerWithoutChecks();
+            ulong offset = ptr - bufferPtr;
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (offset > (ulong)CapacityBytes)
-                throw new ArgumentOutOfRangeException($"Unable to t remove element with '{offset}' offset because it's out of range (0-{CapacityBytes})");
+                throw new ArgumentOutOfRangeException($"Unable to to remove element with '{offset}' offset because it's out of range (0-{CapacityBytes})");
 #endif
+            int index = (int)(offset / (ulong)_buffer.itemSize);               
+            if (index < _buffer.m_MinIndex || index > _buffer.m_MaxIndex)
+                throw new ArgumentOutOfRangeException($"Unable to to remove element with '{offset}' offset because it's out of range (0-{CapacityBytes})");
 
-            int index = (int)(offset / (ulong)_buffer.itemSize);
-            RemoveAtSwapBack(index);
+            return index;
         }
 
+
+        public unsafe void* GetUnsafePtr() => _buffer.GetUnsafePtr();
+    }
+
+    public static class NativeSortExtension2
+    {
+        //public struct DefaultComparer<T> : IComparer<T> where T : IComparable<T>
+        //{
+        //    public int Compare(T x, T y) => x?.CompareTo(y) ?? 0;
+        //}
+
+        //unsafe public static void Sort<T>(this NativeBuffer<T> array) where T : struct, IComparable<T>
+        //{
+        //    array.Sort(new DefaultComparer<T>());
+        //}
+
+        unsafe public static void Sort<T, U>(this NativeBuffer<T> array, U comp) where T : struct where U : IComparer<T>
+        {
+
+            IntroSort<T, U>(array.GetUnsafePtr(), 0, array.Length - 1, 2 * math_2.log2_floor(array.Length), comp);
+        }
+
+        //unsafe public static void Sort<T>(this NativeBuffer<T> slice) where T : struct, IComparable<T>
+        //{
+        //    slice.Sort(new DefaultComparer<T>());
+        //}
+
+        //        unsafe public static void Sort<T, U>(this NativeSlice<T> slice, U comp) where T : struct where U : IComparer<T>
+        //        {
+        //#if ENABLE_UNITY_COLLECTIONS_CHECKS
+        //            if (slice.Stride != UnsafeUtility.SizeOf<T>())
+        //                throw new InvalidOperationException("Sort requires that stride matches the size of the source type");
+        //#endif
+
+        //            IntroSort<T, U>(slice.GetUnsafePtr(), 0, slice.Length - 1, 2 * math_2.log2_floor(slice.Length), comp);
+        //        }
+
+        const int k_IntrosortSizeThreshold = 16;
+        unsafe static void IntroSort<T, U>(void* array, int lo, int hi, int depth, U comp) where T : struct where U : IComparer<T>
+        {
+            while (hi > lo)
+            {
+                int partitionSize = hi - lo + 1;
+                if (partitionSize <= k_IntrosortSizeThreshold)
+                {
+                    if (partitionSize == 1)
+                    {
+                        return;
+                    }
+                    if (partitionSize == 2)
+                    {
+                        SwapIfGreaterWithItems<T, U>(array, lo, hi, comp);
+                        return;
+                    }
+                    if (partitionSize == 3)
+                    {
+                        SwapIfGreaterWithItems<T, U>(array, lo, hi - 1, comp);
+                        SwapIfGreaterWithItems<T, U>(array, lo, hi, comp);
+                        SwapIfGreaterWithItems<T, U>(array, hi - 1, hi, comp);
+                        return;
+                    }
+
+                    InsertionSort<T, U>(array, lo, hi, comp);
+                    return;
+                }
+
+                if (depth == 0)
+                {
+                    HeapSort<T, U>(array, lo, hi, comp);
+                    return;
+                }
+                depth--;
+
+                int p = Partition<T, U>(array, lo, hi, comp);
+                IntroSort<T, U>(array, p + 1, hi, depth, comp);
+                hi = p - 1;
+            }
+        }
+
+        unsafe static void InsertionSort<T, U>(void* array, int lo, int hi, U comp) where T : struct where U : IComparer<T>
+        {
+            int i, j;
+            T t;
+            for (i = lo; i < hi; i++)
+            {
+                j = i;
+                t = UnsafeUtility.ReadArrayElement<T>(array, i + 1);
+                while (j >= lo && comp.Compare(t, UnsafeUtility.ReadArrayElement<T>(array, j)) < 0)
+                {
+                    UnsafeUtility.WriteArrayElement<T>(array, j + 1, UnsafeUtility.ReadArrayElement<T>(array, j));
+                    j--;
+                }
+                UnsafeUtility.WriteArrayElement<T>(array, j + 1, t);
+            }
+        }
+
+        unsafe static int Partition<T, U>(void* array, int lo, int hi, U comp) where T : struct where U : IComparer<T>
+        {
+            int mid = lo + ((hi - lo) / 2);
+            SwapIfGreaterWithItems<T, U>(array, lo, mid, comp);
+            SwapIfGreaterWithItems<T, U>(array, lo, hi, comp);
+            SwapIfGreaterWithItems<T, U>(array, mid, hi, comp);
+
+            T pivot = UnsafeUtility.ReadArrayElement<T>(array, mid);
+            Swap<T>(array, mid, hi - 1);
+            int left = lo, right = hi - 1;
+
+            while (left < right)
+            {
+                while (comp.Compare(pivot, UnsafeUtility.ReadArrayElement<T>(array, ++left)) > 0) ;
+                while (comp.Compare(pivot, UnsafeUtility.ReadArrayElement<T>(array, --right)) < 0) ;
+
+                if (left >= right)
+                    break;
+
+                Swap<T>(array, left, right);
+            }
+
+            Swap<T>(array, left, (hi - 1));
+            return left;
+        }
+
+        unsafe static void HeapSort<T, U>(void* array, int lo, int hi, U comp) where T : struct where U : IComparer<T>
+        {
+            int n = hi - lo + 1;
+
+            for (int i = n / 2; i >= 1; i--)
+            {
+                Heapify<T, U>(array, i, n, lo, comp);
+            }
+
+            for (int i = n; i > 1; i--)
+            {
+                Swap<T>(array, lo, lo + i - 1);
+                Heapify<T, U>(array, 1, i - 1, lo, comp);
+            }
+        }
+
+        unsafe static void Heapify<T, U>(void* array, int i, int n, int lo, U comp) where T : struct where U : IComparer<T>
+        {
+            T val = UnsafeUtility.ReadArrayElement<T>(array, lo + i - 1);
+            int child;
+            while (i <= n / 2)
+            {
+                child = 2 * i;
+                if (child < n && (comp.Compare(UnsafeUtility.ReadArrayElement<T>(array, lo + child - 1), UnsafeUtility.ReadArrayElement<T>(array, (lo + child))) < 0))
+                {
+                    child++;
+                }
+                if (comp.Compare(UnsafeUtility.ReadArrayElement<T>(array, (lo + child - 1)), val) < 0)
+                    break;
+
+                UnsafeUtility.WriteArrayElement<T>(array, lo + i - 1, UnsafeUtility.ReadArrayElement<T>(array, lo + child - 1));
+                i = child;
+            }
+            UnsafeUtility.WriteArrayElement(array, lo + i - 1, val);
+        }
+
+        unsafe static void Swap<T>(void* array, int lhs, int rhs) where T : struct
+        {
+            T val = UnsafeUtility.ReadArrayElement<T>(array, lhs);
+            UnsafeUtility.WriteArrayElement<T>(array, lhs, UnsafeUtility.ReadArrayElement<T>(array, rhs));
+            UnsafeUtility.WriteArrayElement<T>(array, rhs, val);
+        }
+
+        unsafe static void SwapIfGreaterWithItems<T, U>(void* array, int lhs, int rhs, U comp) where T : struct where U : IComparer<T>
+        {
+            if (lhs != rhs)
+            {
+                if (comp.Compare(UnsafeUtility.ReadArrayElement<T>(array, lhs), UnsafeUtility.ReadArrayElement<T>(array, rhs)) > 0)
+                {
+                    Swap<T>(array, lhs, rhs);
+                }
+            }
+        }
     }
 
     public static class StructComparer<T> where T : struct
@@ -311,7 +511,7 @@ namespace Vella.Common
         public static readonly IComparer<T> Default;
 
         static StructComparer()
-        {
+        {            
             if (typeof(T) == typeof(int))
                 Default = new DefaultIntComparer() as IComparer<T>;            
             else if (typeof(T) == typeof(float))
@@ -322,6 +522,11 @@ namespace Vella.Common
                 Default = new DefaultBoolComparer() as IComparer<T>;
             else
                 throw new InvalidOperationException("Unsupported default StructComparer for " + typeof(T));
+        }
+
+        public struct DefaultComparer<T1> : IComparer<T1> where T1 : IComparable<T1>
+        {
+            public int Compare(T1 x, T1 y) => x.CompareTo(y);
         }
 
         public struct DefaultFloatComparer : IComparer<float>
@@ -389,19 +594,24 @@ namespace Vella.Common
 
         internal int m_AllocatorLabel;
 
-        public static unsafe NativeBuffer Assign<T>(void* ptr, int length) where T : struct
+        public static unsafe NativeBuffer Assign(void* ptr, int itemSize, int length)
         {
             NativeBuffer buffer;
             buffer.m_Buffer = ptr;
             buffer.m_Length = length;
-            buffer.itemSize = UnsafeUtility.SizeOf<T>();
+            buffer.itemSize = itemSize;
             buffer.m_MinIndex = 0;
             buffer.m_MaxIndex = length - 1;
             buffer.m_AllocatorLabel = (int)Allocator.Invalid;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             buffer.m_Safety = AtomicSafetyHandle.Create();
-#endif
+#endif            
             return buffer;
+        }
+
+        public static unsafe NativeBuffer Assign<T>(void* ptr, int length) where T : struct
+        {
+            return Assign(ptr, UnsafeUtility.SizeOf<T>(), length);
         }
 
         public static unsafe NativeBuffer Create<T>(int length, Allocator allocator, NativeArrayOptions options = NativeArrayOptions.ClearMemory) where T : struct
@@ -411,13 +621,24 @@ namespace Vella.Common
             if ((options & NativeArrayOptions.ClearMemory) != NativeArrayOptions.ClearMemory)
                 return buffer;
 
-            Clear<T>(buffer);
+            buffer.Clear();
             return buffer;
         }
 
-        public static unsafe void Clear<T>(NativeBuffer buffer) where T : struct
+        public static NativeBuffer Create(int length, int itemSize, Allocator allocator, NativeArrayOptions options = NativeArrayOptions.ClearMemory)
         {
-            UnsafeUtility.MemClear(buffer.m_Buffer, (long)buffer.Length * (long)UnsafeUtility.SizeOf<T>());   
+            Allocate(length, itemSize, UnsafeUtility.AlignOf<int>(), allocator, out NativeBuffer buffer);
+
+            if ((options & NativeArrayOptions.ClearMemory) != NativeArrayOptions.ClearMemory)
+                return buffer;
+
+            buffer.Clear();
+            return buffer;
+        }
+
+        public unsafe void Clear()
+        {
+            UnsafeUtility.MemClear(m_Buffer, (long)Length * itemSize);
         }
 
         public static NativeBuffer Create<T>(T[] array, Allocator allocator) where T : struct
@@ -425,7 +646,7 @@ namespace Vella.Common
             if (array == null)
                 throw new ArgumentNullException(nameof(array));
             Allocate<T>(array.Length, allocator, out NativeBuffer buffer);
-            Copy<T>(array, buffer);
+            Copy(array, buffer);
             return buffer;
         }
 
@@ -438,20 +659,26 @@ namespace Vella.Common
 
         private static unsafe void Allocate<T>(int length, Allocator allocator, out NativeBuffer array) where T : struct
         {
-            long size = (long)UnsafeUtility.SizeOf<T>() * (long)length;
+            IsBlittableAndThrow<T>();
+            Allocate(length, UnsafeUtility.SizeOf<T>(), UnsafeUtility.AlignOf<T>(), allocator, out array);
+        }
+
+        private static unsafe void Allocate(int length, int itemSize, int align, Allocator allocator, out NativeBuffer array)
+        {
+            long size = itemSize * (long)length;
             if (allocator <= Allocator.None)
                 throw new ArgumentException("Allocator must be Temp, TempJob or Persistent", nameof(allocator));
             if (length < 0)
-                throw new ArgumentOutOfRangeException(nameof(length), "Length must be >= 0");
-            IsBlittableAndThrow<T>();
+                throw new ArgumentOutOfRangeException(nameof(length), "Length must be >= 0");            
             if (size > (long)int.MaxValue)
                 throw new ArgumentOutOfRangeException(nameof(length), string.Format("Length * sizeof(T) cannot exceed {0} bytes", (object)int.MaxValue));
-            array.m_Buffer = UnsafeUtility.Malloc(size, UnsafeUtility.AlignOf<T>(), allocator);
+
+            array.m_Buffer = UnsafeUtility.Malloc(size, align, allocator);
             array.m_Length = length;
             array.m_AllocatorLabel = (int)allocator;
             array.m_MinIndex = 0;
             array.m_MaxIndex = length - 1;
-            array.itemSize = UnsafeUtility.SizeOf<T>();
+            array.itemSize = itemSize;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             array.m_Safety = AtomicSafetyHandle.Create();
 #endif
@@ -485,6 +712,20 @@ namespace Vella.Common
 #endif
         }
 
+        [Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private unsafe void CheckElementWriteAccess(int index, int offset)
+        {
+            if (index < m_MinIndex || index > m_MaxIndex)
+                FailOutOfRangeError(index);
+
+            if (offset >= itemSize)
+                throw new ArgumentOutOfRangeException("Offset within an item cannot be larger than the item size");
+
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
+#endif
+        }
+
         //public unsafe T this[int index]
         //{
         //    get
@@ -511,9 +752,24 @@ namespace Vella.Common
             return ref UnsafeUtilityEx.AsRef<T>((void*)((IntPtr)m_Buffer + (UnsafeUtility.SizeOf<T>() * index)));
         }
 
+        public unsafe ref T AsRef<T>(int index, int offset) where T : struct
+        {
+            return ref UnsafeUtilityEx.AsRef<T>((void*)((IntPtr)m_Buffer + (UnsafeUtility.SizeOf<T>() * index) + offset));
+        }
+
         public unsafe T* AsPtr<T>(int index) where T : unmanaged
         {
             return (T*)((IntPtr)m_Buffer + UnsafeUtility.SizeOf<T>() * index);
+        }
+
+        public unsafe T* AsPtr<T>(int index, int offset) where T : unmanaged
+        {
+            return (T*)((IntPtr)m_Buffer + (UnsafeUtility.SizeOf<T>() * index) + offset);
+        }
+
+        public unsafe void* AsPtr(int index)
+        {
+            return (void*)((IntPtr)m_Buffer + itemSize * index);
         }
 
         public unsafe void SetItem<T>(int index, T value)
@@ -521,6 +777,17 @@ namespace Vella.Common
             CheckElementWriteAccess(index);            
             UnsafeUtility.WriteArrayElement(m_Buffer, index, value);          
         }
+
+        public unsafe void SetItem<T>(int index, T value, int offset)
+        {
+            CheckElementWriteAccess(index, offset);           
+            UnsafeUtility.WriteArrayElement((void*)((IntPtr)m_Buffer + offset), index, value);
+        }
+
+        //private static unsafe void WriteArrayElementWithOffset<TU>(void* destination, int index, int stride, int offset, TU value) where TU : unmanaged
+        //{
+        //    *(TU*)((IntPtr)destination + index * stride + offset) = value;
+        //}
 
         public unsafe bool IsCreated
         {
@@ -672,7 +939,7 @@ namespace Vella.Common
             if (src.Length != dst.Length)
                 throw new ArgumentException("source and destination length must be the same");
 
-            Copy<T>(src, 0, dst, 0, src.Length);
+            Copy(src, 0, dst, 0, src.Length);
         }
 
 //        public static void Copy<T>(NativeBuffer src, NativeBuffer<T> dst) where T : struct
@@ -694,7 +961,7 @@ namespace Vella.Common
 #endif
             if (src.Length != dst.Length)
                 throw new ArgumentException("source and destination length must be the same");
-            Copy<T>(src, 0, dst, 0, src.Length);
+            Copy(src, 0, dst, 0, src.Length);
         }
 
         public static void Copy<T>(NativeBuffer src, T[] dst) where T : struct
@@ -705,7 +972,7 @@ namespace Vella.Common
             if (src.Length != dst.Length)
                 throw new ArgumentException("source and destination length must be the same");
 
-            Copy<T>(src, 0, dst, 0, src.Length);
+            Copy(src, 0, dst, 0, src.Length);
         }
 
         public static void Copy<T>(NativeBuffer src, NativeBuffer dst, int length) where T : struct
@@ -715,12 +982,12 @@ namespace Vella.Common
 
         public static void Copy<T>(T[] src, NativeBuffer dst, int length) where T : struct
         {
-            Copy<T>(src, 0, dst, 0, length);
+            Copy(src, 0, dst, 0, length);
         }
 
         public static void Copy<T>(NativeBuffer src, T[] dst, int length) where T : struct
         {
-            Copy<T>(src, 0, dst, 0, length);
+            Copy(src, 0, dst, 0, length);
         }
 
         public static unsafe void Copy<T>(
@@ -819,6 +1086,23 @@ namespace Vella.Common
             GCHandle gcHandle = GCHandle.Alloc((object)dst, GCHandleType.Pinned);
             UnsafeUtility.MemCpy((void*)((IntPtr)(void*)gcHandle.AddrOfPinnedObject() + (dstIndex * UnsafeUtility.SizeOf<T>())), (void*)((IntPtr)src.m_Buffer + (srcIndex * UnsafeUtility.SizeOf<T>())), (long)(length * UnsafeUtility.SizeOf<T>()));
             gcHandle.Free();
+        }
+
+        /// <summary>
+        /// Calculate an element index based on its memory address
+        /// </summary>
+        public unsafe int IndexOf(void* elementPtr)
+        {
+            if (elementPtr == null)
+                throw new ArgumentNullException(nameof(elementPtr));
+
+            int offset = (int)elementPtr - (int)(IntPtr)m_Buffer;
+            int index = offset / itemSize;
+
+            if (index < m_MinIndex || index > m_MaxIndex)
+                throw new ArgumentOutOfRangeException($"Index '{index}' is out of range ({m_MinIndex}-{m_MaxIndex})");
+
+            return index;
         }
 
         //[ExcludeFromDocs]

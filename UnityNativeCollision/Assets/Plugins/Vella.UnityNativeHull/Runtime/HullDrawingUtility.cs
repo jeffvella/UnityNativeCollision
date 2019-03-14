@@ -50,16 +50,26 @@ namespace Vella.UnityNativeHull
     {
         public static void DrawBasicHull(NativeHull hull1, RigidTransform t, Color? color = null, int duration = 1)
         {
+            if (!hull1.IsValid)
+                throw new ArgumentException("Hull is not valid", nameof(hull1));
+
+            if (!color.HasValue)
+            {
+                color = UnityColors.Blue;
+            }         
             foreach (var edge in hull1.GetEdges())
             {
                 var a = math.transform(t, hull1.GetVertex(edge.Origin));
                 var b = math.transform(t, hull1.GetVertex(hull1.GetEdge(edge.Twin).Origin));
-                Debug.DrawLine(a, b, color.Value, 1);
+                Debug.DrawLine(a, b, color.Value);
             }
         }
 
         public static void DrawDebugHull(NativeHull hull, RigidTransform t, DebugHullFlags options = DebugHullFlags.All, Color BaseColor = default)
         {
+            if (!hull.IsValid)
+                throw new ArgumentException("Hull is not valid", nameof(hull));
+
             if (options == DebugHullFlags.None)
                 return;
 

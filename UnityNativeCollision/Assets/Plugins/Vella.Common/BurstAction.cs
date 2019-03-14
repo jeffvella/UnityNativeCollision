@@ -310,4 +310,27 @@ namespace Vella.Common
             }.Run();
         }
     }
+
+    [BurstCompile]
+    public struct BurstRefAction<TFunc> : IJob where TFunc : unmanaged, IBurstAction
+    {
+        [NativeDisableUnsafePtrRestriction]
+        public unsafe TFunc* FunctionPtr;
+
+        public unsafe void Execute()
+        {
+            FunctionPtr->Execute();
+        }
+
+        public static unsafe void Run(ref TFunc func)
+        {
+            new BurstAction<TFunc>
+            {
+                FunctionPtr = UnsafeUtility.AddressOf(ref func),
+
+            }.Run();
+        }
+    }
+
 }
+
