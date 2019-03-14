@@ -1,12 +1,12 @@
 # UnityNativeCollision #
 
-This project is an experimental C# implementation of SAT collision and polygon intersection for the Unity game engine. It's specifically designed to be compatible with Unity's Burst Compiler for performance. 
+This project is an experimental C# implementation of polyhedron SAT collision and intersection for the Unity game engine. It's specifically designed to be compatable with Unity's Burst Compiler for performance. 
 
 ##### Features:
 
 * Generation of native half-edge mesh from Unity Meshes.
-* Fast convex polygon face/edge boolean collision detection.
-* Polygon/Polygon intersection manifold generation (via Sutherland-Hodgman clipping)
+* Fast convex polyhedron face/edge boolean collision detection.
+* Polyhedron intersection manifold generation (via Sutherland-Hodgman clipping)
 * Burst compiled jobs for single and batch collision operations.
 
 <img src="https://i.imgur.com/2r6IAtB.gif" target="_blank" />
@@ -16,6 +16,12 @@ Note: Project was created with Unity 2019.2, older versions may not work.
 ##### Performance:
 
 <img src="https://i.imgur.com/mfPtfYv.jpg" target="_blank" />
+
+##### Contact Visualization:
+
+View a fast version of the contact for physics calcluations. This mode a processes minimal set of geometry, just enough to move colliding objects apart. Versus the full intersection mode, which needs to clip every face for visual/mesh creation purposes.
+
+<img src="https://i.imgur.com/gj2kGu0.gif" target="_blank" />
 
 
 ##### Acknowledgments:
