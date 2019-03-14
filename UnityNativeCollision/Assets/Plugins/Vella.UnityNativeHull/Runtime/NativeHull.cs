@@ -60,6 +60,8 @@ namespace Vella.UnityNativeHull
         {
             if (_isDisposed == 0)
             {
+                _isDisposed = 1;
+
                 if (VerticesNative.IsCreated)
                     VerticesNative.Dispose();
 
@@ -77,7 +79,7 @@ namespace Vella.UnityNativeHull
                 Planes = null;
                 Edges = null;
             }
-            _isDisposed = 1;
+
         }
 
         public unsafe float3 GetVertex(int index) => VerticesNative[index];

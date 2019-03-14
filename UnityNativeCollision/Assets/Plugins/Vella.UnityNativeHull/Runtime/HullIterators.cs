@@ -34,6 +34,8 @@ namespace Vella.UnityNativeHull
 
         public bool MoveNext()
         {
+            _currentIndex++;
+
             if (_edgeIndex >= _hull.EdgeCount-1)
             {
                 return false;
@@ -42,7 +44,7 @@ namespace Vella.UnityNativeHull
             {
                 _edgeIndex = _currentIndex;
             }
-            else if (_currentIndex == -1)
+            else if (_currentIndex == 0)
             {
                 _edgeIndex = _offset;
             }
@@ -54,8 +56,7 @@ namespace Vella.UnityNativeHull
                     return false;
                 }
                 _edgeIndex = edge.Next;
-            }
-            _currentIndex++;
+            }            
             return true;
         }
 

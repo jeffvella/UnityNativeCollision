@@ -100,7 +100,8 @@ namespace Vella.UnityNativeHull
             // Clip face polygon against the clipping planes.
             for (int i = 0; i < clippingPlanes.Length; ++i)
             {
-                NativeBuffer<ClipVertex> outputPolygon = new NativeBuffer<ClipVertex>(hull1.VertexCount, Allocator.Temp);
+                NativeBuffer<ClipVertex> outputPolygon = new NativeBuffer<ClipVertex>(math.max(hull1.VertexCount, hull2.VertexCount), Allocator.Temp);
+
                 Clip(clippingPlanes[i], ref incidentPolygon, ref outputPolygon);
 
                 if (outputPolygon.Length == 0)
@@ -424,35 +425,41 @@ namespace Vella.UnityNativeHull
         }
 
 
-        public static void CreateFaceContact(ref NativeManifold output, FaceQueryResult input, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2, bool flipNormal)
+        public unsafe static void CreateFaceContact(ref NativeManifold output, FaceQueryResult input, RigidTransform transform1, NativeHull hull1, RigidTransform transform2, NativeHull hull2, bool flipNormal)
         {
             var refPlane = hull1.GetPlane(input.Index);
             NativePlane referencePlane = transform1 * refPlane;
 
-            var clippingPlanes = new NativeBuffer<ClipPlane>(hull1.FaceCount, Allocator.Temp);
+            var clippingPlanesStackPtr = stackalloc ClipPlane[hull1.FaceCount];
+            var clippingPlanes = new NativeBuffer<ClipPlane>(clippingPlanesStackPtr, hull1.FaceCount);
+            
             //NativeList<ClipPlane> clippingPlanes = new NativeList<ClipPlane>((int)hull1.FaceCount, Allocator.Temp);
 
             // Find only the side planes of the reference face
             GetFaceSidePlanes(ref clippingPlanes, referencePlane, input.Index, transform1, hull1);
 
-            var incidentPolygon = new NativeBuffer<ClipVertex>(hull1.VertexCount, Allocator.Temp);
+            var incidentPolygonStackPtr = stackalloc ClipVertex[hull1.FaceCount];
+            var incidentPolygon = new NativeBuffer<ClipVertex>(incidentPolygonStackPtr, hull1.VertexCount);
+
             var incidentFaceIndex = ComputeIncidentFaceIndex(referencePlane, transform2, hull2);
             ComputeFaceClippingPolygon(ref incidentPolygon, incidentFaceIndex, transform2, hull2);
 
             //HullDrawingUtility.DrawFaceWithOutline(incidentFaceIndex, transform2, hull2, Color.yellow.ToOpacity(0.3f));
 
+            var outputPolygonStackPtr = stackalloc ClipVertex[hull1.FaceCount];
+
             // Clip face polygon against the clipping planes.
             for (int i = 0; i < clippingPlanes.Length; ++i)
             {
-                var outputPolygon = new NativeBuffer<ClipVertex>(hull1.VertexCount, Allocator.Temp);
+                var outputPolygon = new NativeBuffer<ClipVertex>(outputPolygonStackPtr, hull1.FaceCount);
+
                 Clip(clippingPlanes[i], ref incidentPolygon, ref outputPolygon);
 
                 if (outputPolygon.Length == 0)
                 {
                     return;
                 }
-
-                incidentPolygon.Dispose();
+                
                 incidentPolygon = outputPolygon;
             }
 
@@ -486,8 +493,8 @@ namespace Vella.UnityNativeHull
                 }
             }
 
-            clippingPlanes.Dispose();
-            incidentPolygon.Dispose();
+            //clippingPlanes.Dispose();
+            //incidentPolygon.Dispose();
         }
       
         public static void Swap<T>(T a, T b)

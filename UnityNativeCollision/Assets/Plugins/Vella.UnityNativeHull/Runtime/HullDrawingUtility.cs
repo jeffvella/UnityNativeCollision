@@ -50,16 +50,26 @@ namespace Vella.UnityNativeHull
     {
         public static void DrawBasicHull(NativeHull hull1, RigidTransform t, Color? color = null, int duration = 1)
         {
+            if (!hull1.IsValid)
+                throw new ArgumentException("Hull is not valid", nameof(hull1));
+
+            if (!color.HasValue)
+            {
+                color = UnityColors.Blue;
+            }         
             foreach (var edge in hull1.GetEdges())
             {
                 var a = math.transform(t, hull1.GetVertex(edge.Origin));
-                var b = math.transform(t, hull1.GetVertex(edge.Twin));
-                Debug.DrawLine(a, b, color.Value, 1);
+                var b = math.transform(t, hull1.GetVertex(hull1.GetEdge(edge.Twin).Origin));
+                Debug.DrawLine(a, b, color.Value);
             }
         }
 
         public static void DrawDebugHull(NativeHull hull, RigidTransform t, DebugHullFlags options = DebugHullFlags.All, Color BaseColor = default)
         {
+            if (!hull.IsValid)
+                throw new ArgumentException("Hull is not valid", nameof(hull));
+
             if (options == DebugHullFlags.None)
                 return;
 
@@ -163,6 +173,7 @@ namespace Vella.UnityNativeHull
             if(i > 0 && i < hull1.EdgeCount-1)
             {
                 ref var localEdge = ref hull1.GetEdgeRef(i);
+                ref var twinEdge = ref hull1.GetEdgeRef(localEdge.Twin);
 
                 if (localEdge.Origin < 0 || localEdge.Origin >= hull1.VertexCount)
                 {
@@ -170,14 +181,15 @@ namespace Vella.UnityNativeHull
                     return;
                 }
 
-                if (localEdge.Twin < 0 || localEdge.Twin >= hull1.VertexCount)
+                if (twinEdge.Origin < 0 || twinEdge.Origin >= hull1.VertexCount)
                 {
                    //Debug.LogError($"Invalid twin vertex Index {localEdge.Twin}");
                     return;
                 }
 
+
                 var v1 = math.transform(t1, hull1.GetVertex(localEdge.Origin));
-                var v2 = math.transform(t1, hull1.GetVertex(localEdge.Twin));
+                var v2 = math.transform(t1, hull1.GetVertex(twinEdge.Origin));
 
                 DebugDrawer.DrawLine(v1, v2, color ?? DebugDrawer.DefaultColor);
             }

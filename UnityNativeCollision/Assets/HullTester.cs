@@ -3,9 +3,13 @@ using Unity.Mathematics;
 using UnityEngine;
 using System.Linq;
 using System;
+using System.Diagnostics;
 using Unity.Collections;
 using Vella.Common;
 using Vella.UnityNativeHull;
+using BoundingSphere = Vella.Common.BoundingSphere;
+using Debug = UnityEngine.Debug;
+using Random = Unity.Mathematics.Random;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -30,12 +34,12 @@ public class HullTester : MonoBehaviour
     public bool LogClosestPoint;
     public bool LogContact;
 
-    private Dictionary<int, (Transform Transform, NativeHull Hull)> Hulls;
+    private Dictionary<int, TestShape> Hulls;
+    private Dictionary<int, GameObject> GameObjects;
 
-    unsafe void Update()
+    void Update()
     {
         HandleTransformChanged();
-
         HandleHullCollisions();
     }
 
@@ -114,7 +118,7 @@ public class HullTester : MonoBehaviour
         var batchInput = Hulls.Select(t => new BatchCollisionInput
         {
             Id = t.Key,
-            Transform = new RigidTransform(t.Value.Transform.rotation, t.Value.Transform.position),
+            Transform = new RigidTransform(t.Value.Transform.rot, t.Value.Transform.pos),
             Hull = t.Value.Hull,
 
         }).ToArray();
@@ -132,7 +136,7 @@ public class HullTester : MonoBehaviour
             {
                 foreach (var result in results.AsArray())
                 {
-                    Debug.Log($" > {Hulls[result.A.Id].Transform.gameObject.name} collided with {Hulls[result.B.Id].Transform.gameObject.name}");
+                    Debug.Log($" > {GameObjects[result.A.Id].name} collided with {GameObjects[result.B.Id].name}");
                 }
             }
         }
@@ -149,7 +153,7 @@ public class HullTester : MonoBehaviour
                 HullIntersection.DrawNativeHullHullIntersection(t1, hull1, t2, hull2);              
             }
 
-            if (DrawContact)  // Visualize the minimal contact calcluation for physics
+            if (DrawContact || LogContact)  // Visualize the minimal contact calcluation for physics
             {
                 //var manifold = HullOperations.GetContact.Invoke(t1, hull1, t2, hull2);
                 
@@ -168,7 +172,7 @@ public class HullTester : MonoBehaviour
                     Debug.Log($"GetContact between '{a.name}'/'{b.name}' took: {sw1.Elapsed.TotalMilliseconds:N4}ms (Normal), {sw2.Elapsed.TotalMilliseconds:N4}ms (Burst)");
                 }
 
-                if (burstResult)
+                if (DrawContact && burstResult)
                 {
                     // Do something with manifold
 
@@ -220,16 +224,65 @@ public class HullTester : MonoBehaviour
         }
     }
 
-
     private void HandleTransformChanged()
     {
-        var changed = Transforms.Where(t => t != null).Any(t => !Hulls?.ContainsKey(t.GetInstanceID()) ?? true);
-        if (changed)
-        {
-            EnsureDestroyed();
+        var transforms = Transforms.ToList().Distinct().Where(t => t.gameObject.activeSelf).ToList();
+        var newTransformFound = false;
+        var transformCount = 0;
 
-            Hulls = Transforms.Where(t => t != null).ToDictionary(k => k.GetInstanceID(), v => (v, CreateHull(v)));
+        if (Hulls != null)
+        {
+            for (var i = 0; i < transforms.Count; i++)
+            {
+                var t = transforms[i];
+                if (t == null)
+                    continue;
+
+                transformCount++;
+
+                var foundNewHull = !Hulls.ContainsKey(t.GetInstanceID());
+                if (foundNewHull)
+                {
+                    newTransformFound = true;
+                    break;
+                }
+            }
+
+            if (!newTransformFound && transformCount == Hulls.Count)
+                return;
         }
+
+        Debug.Log("Rebuilding Objects");
+
+        EnsureDestroyed();
+
+        Hulls = transforms.Where(t => t != null).ToDictionary(k => k.GetInstanceID(), CreateShape);
+        GameObjects = transforms.Where(t => t != null).ToDictionary(k => k.GetInstanceID(), t => t.gameObject);
+
+        SceneView.RepaintAll();
+    }
+
+    private TestShape CreateShape(Transform t)
+    {        
+        var bounds = new BoundingBox();
+        var hull = CreateHull(t);
+
+        for (int i = 0; i < hull.VertexCount; i++)
+        {
+            var v = hull.GetVertex(i);
+            bounds.Encapsulate(v);
+        }
+
+        var sphere = BoundingSphere.FromAABB(bounds);
+
+        return new TestShape
+        {
+            BoundingBox = bounds,
+            BoundingSphere = sphere,
+            Id = t.GetInstanceID(),
+            Transform = new RigidTransform(t.rotation, t.position),
+            Hull = hull,
+        };
     }
 
     private NativeHull CreateHull(Transform v)
@@ -239,17 +292,14 @@ public class HullTester : MonoBehaviour
         {
             return HullFactory.CreateBox(boxCollider.size);
         }
-        else if(collider is MeshCollider meshCollider)
+        if(collider is MeshCollider meshCollider)
         {
             return HullFactory.CreateFromMesh(meshCollider.sharedMesh);
         }
-        else
+        var mf = v.GetComponent<MeshFilter>();
+        if(mf != null && mf.sharedMesh != null)
         {
-            var mf = v.GetComponent<MeshFilter>();
-            if(mf != null)
-            {
-                return HullFactory.CreateFromMesh(mf.sharedMesh);
-            }
+            return HullFactory.CreateFromMesh(mf.sharedMesh);
         }
         throw new InvalidOperationException($"Unable to create a hull from the GameObject '{v?.name}'");
     }
@@ -289,11 +339,9 @@ public class HullTester : MonoBehaviour
                 kvp.Value.Hull.Dispose();
             }
         }
-
+ 
         Hulls.Clear();
     }
 
-
 }
-
 

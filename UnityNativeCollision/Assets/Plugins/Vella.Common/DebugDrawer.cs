@@ -351,8 +351,67 @@ namespace Vella.Common
             DrawCircle(position + (_forward * 0.5f), direction, ((_forward * 0.5f) - (slerpedVector.normalized * (dist * 0.5f))).magnitude, color, duration, depthTest);
         }
 
-    }
+        /// <summary>
+        /// Draws a cube made with lines
+        /// </summary>
+        /// <param name="center">center of the code in world space</param>
+        /// <param name="size">size of the cube (extents*2 or max-min)</param>
+        /// <param name="color">the color of the cube lines</param>
+        public static void DrawDottedWireCube(Vector3 center, Vector3 size, Color? color = null, float GapSize = default)
+        {
+            if (GapSize == default)
+            {
+                GapSize = Vector3.Distance(Camera.main.transform.position, center);
+            }
 
+            Draw(new DottedWireCubeDrawing
+            {
+                Color = color ?? DefaultColor,
+                Center = center,
+                Size = size,
+                GapSize = GapSize,
+            });
+        }
+
+        /// <summary>
+        /// Draws a cube made with lines
+        /// </summary>
+        /// <param name="center">center of the code in world space</param>
+        /// <param name="size">size of the cube (extents*2 or max-min)</param>
+        /// <param name="color">the color of the cube lines</param>
+        public static void DrawWireCube(Vector3 center, Vector3 size, Color color = default)
+        {
+            Vector3 lbb = center + ((-size) * 0.5f);
+            Vector3 rbb = center + (new Vector3(size.x, -size.y, -size.z) * 0.5f);
+
+            Vector3 lbf = center + (new Vector3(size.x, -size.y, size.z) * 0.5f);
+            Vector3 rbf = center + (new Vector3(-size.x, -size.y, size.z) * 0.5f);
+
+            Vector3 lub = center + (new Vector3(-size.x, size.y, -size.z) * 0.5f);
+            Vector3 rub = center + (new Vector3(size.x, size.y, -size.z) * 0.5f);
+
+            Vector3 luf = center + ((size) * 0.5f);
+            Vector3 ruf = center + (new Vector3(-size.x, size.y, size.z) * 0.5f);
+
+            color = color == default ? Color.white : color;
+
+            Debug.DrawLine(lbb, rbb, color);
+            Debug.DrawLine(rbb, lbf, color);
+            Debug.DrawLine(lbf, rbf, color);
+            Debug.DrawLine(rbf, lbb, color);
+
+            Debug.DrawLine(lub, rub, color);
+            Debug.DrawLine(rub, luf, color);
+            Debug.DrawLine(luf, ruf, color);
+            Debug.DrawLine(ruf, lub, color);
+
+            Debug.DrawLine(lbb, lub, color);
+            Debug.DrawLine(rbb, rub, color);
+            Debug.DrawLine(lbf, luf, color);
+            Debug.DrawLine(rbf, ruf, color);
+        }
+
+    }
 
     public struct SphereDrawing : IDebugDrawing
     {
@@ -413,6 +472,52 @@ namespace Vella.Common
 #if UNITY_EDITOR
             Handles.color = Color;
             Handles.DrawDottedLine(Start,End, GapSize);
+#endif
+        }
+    }
+
+    public struct DottedWireCubeDrawing : IDebugDrawing
+    {
+        public Color Color;
+        public Vector3 Center;
+        public Vector3 Size;
+
+        /// <summary>
+        /// The spacing between the dots in pixels.
+        /// </summary>
+        public float GapSize;
+
+        public void Draw()
+        {
+#if UNITY_EDITOR
+            Handles.color = Color;
+
+            Vector3 lbb = Center + ((-Size) * 0.5f);
+            Vector3 rbb = Center + (new Vector3(Size.x, -Size.y, -Size.z) * 0.5f);
+
+            Vector3 lbf = Center + (new Vector3(Size.x, -Size.y, Size.z) * 0.5f);
+            Vector3 rbf = Center + (new Vector3(-Size.x, -Size.y, Size.z) * 0.5f);
+
+            Vector3 lub = Center + (new Vector3(-Size.x, Size.y, -Size.z) * 0.5f);
+            Vector3 rub = Center + (new Vector3(Size.x, Size.y, -Size.z) * 0.5f);
+
+            Vector3 luf = Center + ((Size) * 0.5f);
+            Vector3 ruf = Center + (new Vector3(-Size.x, Size.y, Size.z) * 0.5f);
+
+            Handles.DrawDottedLine(lbb, rbb, GapSize);
+            Handles.DrawDottedLine(rbb, lbf, GapSize);
+            Handles.DrawDottedLine(lbf, rbf, GapSize);
+            Handles.DrawDottedLine(rbf, lbb, GapSize);
+
+            Handles.DrawDottedLine(lub, rub, GapSize);
+            Handles.DrawDottedLine(rub, luf, GapSize);
+            Handles.DrawDottedLine(luf, ruf, GapSize);
+            Handles.DrawDottedLine(ruf, lub, GapSize);
+
+            Handles.DrawDottedLine(lbb, lub, GapSize);
+            Handles.DrawDottedLine(rbb, rub, GapSize);
+            Handles.DrawDottedLine(lbf, luf, GapSize);
+            Handles.DrawDottedLine(rbf, ruf, GapSize);
 #endif
         }
     }
