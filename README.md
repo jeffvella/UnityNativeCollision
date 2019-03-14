@@ -1,6 +1,6 @@
 # UnityNativeCollision #
 
-This project is an experimental C# implementation of polyhedron SAT collision and intersection for the Unity game engine. It's specifically designed to be compatable with Unity's Burst Compiler for performance. 
+This project is an experimental C# implementation of polyhedron SAT collision and intersection for the Unity game engine. It's specifically designed to be compatible with Unity's Burst Compiler for performance. 
 
 ##### Features:
 
@@ -8,6 +8,8 @@ This project is an experimental C# implementation of polyhedron SAT collision an
 * Fast convex polyhedron face/edge boolean collision detection.
 * Polyhedron intersection manifold generation (via Sutherland-Hodgman clipping)
 * Burst compiled jobs for single and batch collision operations.
+* Experimental bounding volume hierarchy.
+* NativeBuffer<T> collection able to run off stackalloc.
 
 <img src="https://i.imgur.com/2r6IAtB.gif" target="_blank" />
 
