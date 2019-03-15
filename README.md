@@ -21,7 +21,7 @@ Note: Project was created with Unity 2019.2, older versions may not work.
 
 ##### Contact Visualization:
 
-View a fast version of the contact for physics calcluations. This mode a processes minimal set of geometry, just enough to move colliding objects apart. Versus the full intersection mode, which needs to clip every face for visual/mesh creation purposes.
+View a fast version of the contact for physics calcluations. This mode a processes a minimal set of geometry, just enough to move colliding objects apart. Versus the full intersection mode, which needs to clip every face for visual/mesh creation purposes.
 
 <img src="https://i.imgur.com/gj2kGu0.gif" target="_blank" />
 
