@@ -2,6 +2,14 @@
 
 This project is an experimental C# implementation of polyhedron SAT collision and intersection for the Unity game engine. It's specifically designed to be compatible with Unity's Burst Compiler for performance. 
 
+##### Acknowledgments:
+The math is ported to C# from the C++ BounceLite by Irlan Robson (zLib License) and adapted for Unity's new Math library and Burst Compiler requirments: https://github.com/irlanrobson/bounce_lite 
+
+The SAT implementation is originally based on the 2013 GDC presentation by Dirk Gregorius and his forum posts about Valve's Rubikon physics engine:
+ * https://www.gdcvault.com/play/1017646/Physics-for-Game-Programmers-The
+ * https://www.gamedev.net/forums/topic/692141-collision-detection-why-gjk/?do=findComment&comment=5356490 
+ * http://www.gamedev.net/topic/667499-3d-sat-problem/ 
+
 ##### Features:
 
 * Generation of native half-edge mesh from Unity Meshes.
@@ -26,11 +34,7 @@ View a fast version of the contact for physics calcluations. This mode a process
 <img src="https://i.imgur.com/gj2kGu0.gif" target="_blank" />
 
 
-##### Acknowledgments:
-This work is in part derived from BounceLite by Irlan Robson (zLib License): 
-https://github.com/irlanrobson/bounce_lite 
 
-The SAT implementation is based on the 2013 GDC presentation by Dirk Gregorius and his forum posts about Valve's Rubikon physics engine:
- * https://www.gdcvault.com/play/1017646/Physics-for-Game-Programmers-The
- * https://www.gamedev.net/forums/topic/692141-collision-detection-why-gjk/?do=findComment&comment=5356490 
- * http://www.gamedev.net/topic/667499-3d-sat-problem/ 
+##### Acknowledgments:
+
+
