@@ -3,7 +3,7 @@
 This project is an experimental C# implementation of polyhedron SAT collision and intersection for the Unity game engine. It's specifically designed to be compatible with Unity's Burst Compiler for performance. 
 
 ##### Acknowledgments:
-The math is ported to C# from the C++ BounceLite by Irlan Robson (zLib License) and adapted for Unity's new Math library and Burst Compiler requirments: https://github.com/irlanrobson/bounce_lite 
+The math is ported to C# from the C++ BounceLite project by Irlan Robson (zLib License) and adapted for Unity's new Math library and Burst Compiler requirments: https://github.com/irlanrobson/bounce_lite 
 
 The SAT implementation is originally based on the 2013 GDC presentation by Dirk Gregorius and his forum posts about Valve's Rubikon physics engine:
  * https://www.gdcvault.com/play/1017646/Physics-for-Game-Programmers-The
